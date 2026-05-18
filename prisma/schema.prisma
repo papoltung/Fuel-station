@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model FuelType {
+  id           Int             @id @default(autoincrement())
+  name         String          @unique
+  label        String
+  currentPrice Float           @default(0)
+  sales        Sale[]
+  purchases    FuelPurchase[]
+  stockChecks  StockCheck[]
+  fuelStock    FuelStock?
+  meterPeriods MeterPeriod[]
+  saleOrders   SaleOrder[]
+  createdAt    DateTime        @default(now())
+}
+
+model Sale {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  sellerName    String
+  fuelType      FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId    Int
+  pumpNo        String
+  meterStart    Float?
+  meterEnd      Float?
+  liters        Float
+  pricePerLiter Float
+  totalAmount   Float
+  paymentMethod String
+  customerName  String?
+  note          String?
+  createdAt     DateTime @default(now())
+}
+
+model FuelPurchase {
+  id           Int      @id @default(autoincrement())
+  date         DateTime @default(now())
+  fuelType     FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId   Int
+  liters       Float
+  costPerLiter Float
+  totalCost    Float
+  invoiceNo    String?
+  supplier     String?
+  note         String?
+  createdAt    DateTime @default(now())
+}
+
+model StockCheck {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  fuelType      FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId    Int
+  systemLiters  Float
+  actualLiters  Float
+  difference    Float
+  note          String?
+  createdAt     DateTime @default(now())
+}
+
+model FuelStock {
+  id           Int      @id @default(autoincrement())
+  fuelType     FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId   Int      @unique
+  currentLiters Float   @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id           Int            @id @default(autoincrement())
+  name         String
+  category     String         @default("")
+  unit         String         @default("ขวด")
+  size         String         @default("")
+  currentPrice Float          @default(0)
+  costPrice    Float          @default(0)
+  currentStock Int            @default(0)
+  minStock     Int            @default(3)
+  image        String?
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  sales        ProductSale[]
+}
+
+model ProductSale {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  sellerName    String
+  product       Product  @relation(fields: [productId], references: [id])
+  productId     Int
+  quantity      Float
+  unitPrice     Float
+  totalAmount   Float
+  paymentMethod String
+  customerName  String?
+  note          String?
+  createdAt     DateTime @default(now())
+}
+
+model CashCount {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @default(now())
+  counts    String   // JSON: {"1000":2,"500":1,...}
+  total     Float
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model SaleOrder {
+  id            Int      @id @default(autoincrement())
+  createdAt     DateTime @default(now())
+  fuelType      FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId    Int
+  pumpNo        String
+  totalAmount   Float
+  pricePerLiter Float
+  paymentMethod String
+  sellerName    String
+  customerName  String?
+  note          String?
+  status        String   @default("pending")
+}
+
+model MeterPeriod {
+  id            Int      @id @default(autoincrement())
+  date          DateTime @default(now())
+  fuelType      FuelType @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId    Int
+  meterStart    Float
+  meterEnd      Float?
+  liters        Float?
+  pricePerLiter Float
+  totalRevenue  Float?
+  note          String?
+  createdAt     DateTime @default(now())
+}
