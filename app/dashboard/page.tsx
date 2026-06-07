@@ -361,16 +361,12 @@ export default function DashboardPage() {
             {/* Profit card — fuel only */}
             {summary && (summary.totalCost > 0 || summary.fuelRevenue > 0) && (() => {
               const fuelProfit = summary.fuelRevenue - summary.totalCost;
-              return (
-                <div className="bg-white rounded-2xl shadow-sm p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">กำไรน้ำมันขั้นต้นวันนี้</p>
-                    <button onClick={() => profitUnlocked ? setProfitUnlocked(false) : setShowPinModal(true)}
-                      className="text-gray-400 hover:text-gray-600 text-base">
-                      {profitUnlocked ? "🔓" : "🔒"}
-                    </button>
-                  </div>
-                  <div className={`transition-all duration-300 ${profitUnlocked ? "" : "blur-md select-none pointer-events-none"}`}>
+              return profitUnlocked ? (
+                  <div className="bg-white rounded-2xl shadow-sm p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">กำไรน้ำมันขั้นต้นวันนี้</p>
+                      <button onClick={() => setProfitUnlocked(false)} className="text-gray-400 text-base">🔓</button>
+                    </div>
                     <div className="grid grid-cols-3 gap-3 text-center">
                       <div>
                         <p className="text-xs text-gray-400 mb-1">ขายน้ำมัน</p>
@@ -399,13 +395,12 @@ export default function DashboardPage() {
                       </p>
                     )}
                   </div>
-                  {!profitUnlocked && (
-                    <button onClick={() => setShowPinModal(true)} className="w-full mt-3 text-xs text-blue-500 font-medium">
-                      แตะเพื่อดู
-                    </button>
-                  )}
-                </div>
-              );
+                ) : (
+                  <button onClick={() => setShowPinModal(true)} className="w-full bg-white rounded-2xl shadow-sm px-5 py-3 flex items-center justify-between">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">กำไรน้ำมันขั้นต้นวันนี้</p>
+                    <span className="text-gray-300 text-lg">🔒</span>
+                  </button>
+                );
             })()}
 
             {/* Revenue breakdown (fuel vs product) */}
