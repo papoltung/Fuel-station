@@ -526,7 +526,7 @@ export default function DashboardPage() {
                           <div className={`h-full rounded-full transition-all duration-500 ${FUEL_COLOR[key] ?? "bg-gray-400"}`}
                             style={{ width: `${maxFuelRevenue > 0 ? (v.revenue / maxFuelRevenue) * 100 : 0}%` }} />
                         </div>
-                        {v.cost > 0 && (
+                        {v.cost > 0 && profitUnlocked && (
                           <div className="grid grid-cols-3 gap-2 text-center text-xs mb-2">
                             <div><p className="text-gray-400">ต้นทุน/ล</p><p className="font-semibold text-gray-600">{fmt(v.avgCostPerLiter)} ฿</p></div>
                             <div><p className="text-gray-400">ต้นทุนรวม</p><p className="font-semibold text-gray-600">{fmtInt(v.cost)} ฿</p></div>
