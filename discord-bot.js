@@ -1,9 +1,10 @@
+require("dotenv").config();
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 const { spawn } = require("child_process");
 
-const TOKEN = "MTUwNjQ5Nzc3OTMyMzYzNzc2MA.GSoA35.9XDAEzbBrlzBZBeCDU9hgPhmXwUTx8Gu4x7s7Q";
+const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = "1506490944999133384";
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://fuel-station-kappa.vercel.app";
 const CF_EXE = "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe";
 
 let tunnelProc = null;
@@ -129,7 +130,7 @@ client.on("interactionCreate", async (interaction) => {
       const fuels = await getFuelTypes();
       const fuel = panelState.fuelHint === "d"
         ? fuels.find((f) => f.name === "diesel")
-        : fuels.find((f) => f.name.startsWith("benzin"));
+        : fuels.find((f) => f.name === "benzin95");
       if (!fuel) { await interaction.reply({ content: "ไม่พบชนิดน้ำมัน", ephemeral: true }); return; }
       const d = new Date();
       const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
@@ -182,7 +183,7 @@ client.on("messageCreate", async (msg) => {
     const newPrice = parseFloat(priceMatch[2]);
     try {
       const fuels = await getFuelTypes();
-      const fuel = hint === "d" ? fuels.find((f) => f.name === "diesel") : fuels.find((f) => f.name.startsWith("benzin"));
+      const fuel = hint === "d" ? fuels.find((f) => f.name === "diesel") : fuels.find((f) => f.name === "benzin95");
       if (!fuel) { msg.react("❓"); return; }
       const res = await fetch(`${API_BASE}/api/fuel-types/${fuel.id}`, {
         method: "PATCH",
@@ -218,7 +219,7 @@ client.on("messageCreate", async (msg) => {
     const fuels = await getFuelTypes();
     let fuel;
     if (fuelHint === "d") fuel = fuels.find((f) => f.name === "diesel");
-    else if (fuelHint === "b") fuel = fuels.find((f) => f.name.startsWith("benzin"));
+    else if (fuelHint === "b") fuel = fuels.find((f) => f.name === "benzin95");
     else fuel = fuels[0];
     if (!fuel) { msg.react("❓"); return; }
     const d = new Date();
@@ -234,7 +235,11 @@ client.on("messageCreate", async (msg) => {
     if (res.ok) {
       const liters = fuel.currentPrice > 0 ? (amount / fuel.currentPrice).toFixed(2) : "?";
       msg.reply(`OK ${amount} บาท | ${fuel.label} | ${payment === "cash" ? "สด" : "โอน"} | ${liters} L`);
-    } else { msg.react("❌"); }
+    } else {
+      const errBody = await res.text();
+      console.error("API error:", res.status, errBody);
+      msg.reply(`❌ ${res.status}: ${errBody}`);
+    }
   } catch (e) { console.error(e); msg.react("❌"); }
 });
 

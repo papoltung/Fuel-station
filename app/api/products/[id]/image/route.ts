@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  "https://doglpjixsyuhtabaxmib.supabase.co",
+  "sb_publishable_68Dxw2zNu2ruFvXzmPhV1Q_2EoIJIfp"
+);
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -15,15 +19,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const filename = `product-${id}.${ext}`;
-  const dir = path.join(process.cwd(), "public", "products");
-  await mkdir(dir, { recursive: true });
   const bytes = await file.arrayBuffer();
-  await writeFile(path.join(dir, filename), Buffer.from(bytes));
 
-  const imagePath = `/products/${filename}`;
-  await prisma.product.update({ where: { id: Number(id) }, data: { image: imagePath } });
+  const { error } = await supabase.storage
+    .from("products")
+    .upload(filename, Buffer.from(bytes), {
+      contentType: file.type,
+      upsert: true,
+    });
 
-  return NextResponse.json({ image: imagePath });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { data: { publicUrl } } = supabase.storage.from("products").getPublicUrl(filename);
+
+  await prisma.product.update({ where: { id: Number(id) }, data: { image: publicUrl } });
+
+  return NextResponse.json({ image: publicUrl });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

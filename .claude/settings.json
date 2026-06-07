@@ -80,7 +80,8 @@
       "Bash(graphify query *)",
       "Bash(Start-Process \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")",
       "Bash(explorer \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")",
-      "PowerShell(Start-Process \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")"
+      "PowerShell(Start-Process \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")",
+      "PowerShell(Start-Process \"http://localhost:3000\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\products\\[id]",
