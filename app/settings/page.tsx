@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PinModal, { getStoredPin } from "@/components/PinModal";
 
 type FuelType = { id: number; name: string; label: string; currentPrice: number };
 
 export default function SettingsPage() {
   const router = useRouter();
+  const [unlocked, setUnlocked] = useState(false);
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [prices, setPrices] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
@@ -24,7 +26,10 @@ export default function SettingsPage() {
       });
   }
 
-  useEffect(() => { loadFuelTypes(); }, []);
+  useEffect(() => {
+    if (!getStoredPin()) setUnlocked(true); // no PIN set yet — let through to set one via first access
+    loadFuelTypes();
+  }, []);
 
   async function deleteFuelType(ft: FuelType) {
     if (!confirm(`ลบ "${ft.label}" ออกจากระบบ?\nทำได้เฉพาะถ้าไม่มียอดขาย/รับน้ำมัน`)) return;
@@ -49,6 +54,7 @@ export default function SettingsPage() {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
         <button onClick={() => router.push("/dashboard")} className="text-gray-500 text-xl w-8">←</button>
@@ -96,5 +102,13 @@ export default function SettingsPage() {
         ))}
       </div>
     </div>
+    {!unlocked && (
+      <PinModal
+        title="ใส่รหัสเพื่อเข้า Settings"
+        onSuccess={() => setUnlocked(true)}
+        onCancel={() => router.back()}
+      />
+    )}
+    </>
   );
 }

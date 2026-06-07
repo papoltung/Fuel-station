@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PinModal from "@/components/PinModal";
 
 type StockItem = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type FuelType = { id: number; name: string; label: string; currentPrice: number };
@@ -82,6 +83,8 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<SaleOrder[]>([]);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [profitUnlocked, setProfitUnlocked] = useState(false);
+  const [showPinModal, setShowPinModal] = useState(false);
 
   const LOW_THRESHOLD = 1000;
 
@@ -219,6 +222,7 @@ export default function DashboardPage() {
   const maxFuelRevenue = fuelEntries.length > 0 ? Math.max(...fuelEntries.map(([, v]) => v.revenue)) : 1;
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -359,33 +363,46 @@ export default function DashboardPage() {
               const fuelProfit = summary.fuelRevenue - summary.totalCost;
               return (
                 <div className="bg-white rounded-2xl shadow-sm p-5">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">กำไรน้ำมันขั้นต้นวันนี้</p>
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">ขายน้ำมัน</p>
-                      <p className="text-base font-bold text-gray-800">{fmtInt(summary.fuelRevenue)}</p>
-                      <p className="text-xs text-gray-400">บาท</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">ต้นทุนน้ำมัน</p>
-                      <p className="text-base font-bold text-gray-600">{fmtInt(summary.totalCost)}</p>
-                      <p className="text-xs text-gray-400">บาท</p>
-                    </div>
-                    <div className={`rounded-xl py-1 ${fuelProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
-                      <p className="text-xs text-gray-400 mb-1">กำไรขั้นต้น</p>
-                      <p className={`text-base font-bold ${fuelProfit >= 0 ? "text-green-700" : "text-red-600"}`}>
-                        {fuelProfit >= 0 ? "+" : ""}{fmtInt(fuelProfit)}
-                      </p>
-                      <p className="text-xs text-gray-400">บาท</p>
-                    </div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">กำไรน้ำมันขั้นต้นวันนี้</p>
+                    <button onClick={() => profitUnlocked ? setProfitUnlocked(false) : setShowPinModal(true)}
+                      className="text-gray-400 hover:text-gray-600 text-base">
+                      {profitUnlocked ? "🔓" : "🔒"}
+                    </button>
                   </div>
-                  {summary.totalLiters > 0 && summary.totalCost > 0 && (
-                    <p className="text-center text-xs text-gray-400 mt-3">
-                      กำไรน้ำมัน/ลิตรเฉลี่ย{" "}
-                      <span className={`font-semibold ${fuelProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                        {fmt(fuelProfit / summary.totalLiters)} ฿/L
-                      </span>
-                    </p>
+                  <div className={`transition-all duration-300 ${profitUnlocked ? "" : "blur-md select-none pointer-events-none"}`}>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1">ขายน้ำมัน</p>
+                        <p className="text-base font-bold text-gray-800">{fmtInt(summary.fuelRevenue)}</p>
+                        <p className="text-xs text-gray-400">บาท</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400 mb-1">ต้นทุนน้ำมัน</p>
+                        <p className="text-base font-bold text-gray-600">{fmtInt(summary.totalCost)}</p>
+                        <p className="text-xs text-gray-400">บาท</p>
+                      </div>
+                      <div className={`rounded-xl py-1 ${fuelProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
+                        <p className="text-xs text-gray-400 mb-1">กำไรขั้นต้น</p>
+                        <p className={`text-base font-bold ${fuelProfit >= 0 ? "text-green-700" : "text-red-600"}`}>
+                          {fuelProfit >= 0 ? "+" : ""}{fmtInt(fuelProfit)}
+                        </p>
+                        <p className="text-xs text-gray-400">บาท</p>
+                      </div>
+                    </div>
+                    {summary.totalLiters > 0 && summary.totalCost > 0 && (
+                      <p className="text-center text-xs text-gray-400 mt-3">
+                        กำไรน้ำมัน/ลิตรเฉลี่ย{" "}
+                        <span className={`font-semibold ${fuelProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
+                          {fmt(fuelProfit / summary.totalLiters)} ฿/L
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                  {!profitUnlocked && (
+                    <button onClick={() => setShowPinModal(true)} className="w-full mt-3 text-xs text-blue-500 font-medium">
+                      แตะเพื่อดู
+                    </button>
                   )}
                 </div>
               );
@@ -615,5 +632,13 @@ export default function DashboardPage() {
         )}
       </div>
     </div>
+    {showPinModal && (
+      <PinModal
+        title="ใส่รหัสดูกำไร"
+        onSuccess={() => { setProfitUnlocked(true); setShowPinModal(false); }}
+        onCancel={() => setShowPinModal(false)}
+      />
+    )}
+    </>
   );
 }
