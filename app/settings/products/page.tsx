@@ -53,10 +53,7 @@ export default function ProductSettingsPage() {
       })
       .catch(() => setLoading(false));
   }
-  useEffect(() => {
-    if (!getStoredPin()) setUnlocked(true);
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function saveProduct(id: number) {
     setSaving((v) => ({ ...v, [id]: true }));

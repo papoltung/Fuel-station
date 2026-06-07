@@ -26,10 +26,7 @@ export default function SettingsPage() {
       });
   }
 
-  useEffect(() => {
-    if (!getStoredPin()) setUnlocked(true); // no PIN set yet — let through to set one via first access
-    loadFuelTypes();
-  }, []);
+  useEffect(() => { loadFuelTypes(); }, []);
 
   async function deleteFuelType(ft: FuelType) {
     if (!confirm(`ลบ "${ft.label}" ออกจากระบบ?\nทำได้เฉพาะถ้าไม่มียอดขาย/รับน้ำมัน`)) return;

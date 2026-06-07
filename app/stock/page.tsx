@@ -87,10 +87,7 @@ export default function StockPage() {
     });
   }
 
-  useEffect(() => {
-    if (!getStoredPin()) setUnlocked(true);
-    reload();
-  }, []);
+  useEffect(() => { reload(); }, []);
 
   async function deleteCheck(id: number, label: string) {
     if (!confirm(`ลบประวัติวัดถัง ${label}?\n(สต๊อกจะไม่เปลี่ยน)`)) return;
