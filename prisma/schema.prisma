@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model FuelType {
@@ -50,6 +51,8 @@ model FuelPurchase {
   invoiceNo    String?
   supplier     String?
   note         String?
+  isPaid       Boolean  @default(true)
+  paidNote     String?
   createdAt    DateTime @default(now())
 }
 
@@ -126,6 +129,28 @@ model SaleOrder {
   customerName  String?
   note          String?
   status        String   @default("pending")
+}
+
+model SupplierDebt {
+  id         Int                  @id @default(autoincrement())
+  date       DateTime             @default(now())
+  supplier   String
+  amount     Float
+  note       String?
+  isPaid     Boolean              @default(false)
+  paidAt     DateTime?
+  paidNote   String?
+  createdAt  DateTime             @default(now())
+  payments   SupplierDebtPayment[]
+}
+
+model SupplierDebtPayment {
+  id        Int          @id @default(autoincrement())
+  debt      SupplierDebt @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  debtId    Int
+  amount    Float
+  note      String?
+  paidAt    DateTime     @default(now())
 }
 
 model MeterPeriod {

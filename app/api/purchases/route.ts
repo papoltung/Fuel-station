@@ -18,7 +18,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fuelTypeId, liters, costPerLiter, invoiceNo, supplier, note, date } = body;
+    const { fuelTypeId, liters, costPerLiter, invoiceNo, supplier, note, date, isPaid, paidNote } = body;
 
     const ftId = Number(fuelTypeId);
     const ltr = Number(liters);
@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
           invoiceNo: invoiceNo || null,
           supplier: supplier || null,
           note: note || null,
+          isPaid: isPaid !== false,
+          paidNote: paidNote || null,
         },
         include: { fuelType: true },
       });

@@ -45,14 +45,64 @@
       "Bash(git init *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(curl -s http://localhost:3000/api/fuel-stock)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\app\\\\api\\\\supplier-debts\\\\[id]\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\app\\\\api\\\\supplier-debts\\\\[id]\\\\payments\\\\[paymentId]\")",
+      "Bash(findstr \":3000\")",
+      "Bash(start http://localhost:3000)",
+      "Bash(where cloudflared *)",
+      "Bash(findstr \"trycloudflare\\\\|https://\")",
+      "Bash(findstr \"IPv4\")",
+      "Bash(tasklist)",
+      "Bash(findstr cloudflared *)",
+      "Bash(taskkill /F /PID 38528)",
+      "PowerShell(Get-Process -Name \"node\")",
+      "PowerShell(Get-Process -Name \"node\",\"cloudflared\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Name \"cloudflared\" -Force)",
+      "PowerShell(netstat -ano)",
+      "Bash(node -e 'const {PrismaClient}=require\\('\\\\''./node_modules/.prisma/client'\\\\''\\);const p=new PrismaClient\\(\\);p.sale.count\\(\\).then\\(n=>console.log\\('\\\\''sales:'\\\\'',n\\)\\).catch\\(e=>console.log\\('\\\\''err:'\\\\'',e.message\\)\\).finally\\(\\(\\)=>p.$disconnect\\(\\)\\)')",
+      "Bash(curl -s \"http://localhost:3000/api/sales/summary?date=2026-05-20\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/api/sales/summary?date=2026-05-20\")",
+      "Bash(python scrape_novel.py 212 214)",
+      "Bash(python scrape_novel.py 217 225)",
+      "Bash(python scrape_novel.py 226 230)",
+      "Bash(python scrape_novel.py 231 240)",
+      "Bash(python scrape_novel.py 241 242 243 244 245 246 247 248 249 250)",
+      "Bash(python scrape_novel.py 241)",
+      "Bash(graphify --version)",
+      "Bash(uv tool *)",
+      "Bash(graphify --help)",
+      "Bash(graphify claude *)",
+      "Bash(graphify extract *)",
+      "PowerShell(if \\($env:ANTHROPIC_API_KEY\\) { \"key found\" } else { \"not set\" })",
+      "Bash(graphify update *)",
+      "Bash(graphify query *)",
+      "Bash(Start-Process \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")",
+      "Bash(explorer \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\USER\\\\Documents\\\\fuel-station\\\\graphify-out\\\\graph.html\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\products\\[id]",
       "C:\\Users\\USER\\AppData\\Roaming\\MetaQuotes\\Terminal\\5059C2DAF4C9C78E6455BD6D4BC4AB8F\\MQL5\\Indicators",
       "C:\\Users\\USER\\AppData\\Roaming\\MetaQuotes\\Terminal\\5059C2DAF4C9C78E6455BD6D4BC4AB8F\\MQL5\\Experts",
       "C:\\Users\\USER\\AppData\\Local\\Temp",
-      "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sale-orders"
+      "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sale-orders",
+      "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\supplier-debts",
+      "c:\\Users\\USER\\Documents\\fuel-station\\app\\api\\supplier-debts\\[id]\\payments"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(python3 -c \"import json,sys; d=json.load(sys.stdin); print(d.get('tool_input',d).get('command',''))\" 2>/dev/null || true); case \"$CMD\" in *grep*|*rg\\ *|*ripgrep*|*find\\ *|*fd\\ *|*ack\\ *|*ag\\ *)   [ -f graphify-out/graph.json ] &&   echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"graphify: Knowledge graph exists. Read graphify-out/GRAPH_REPORT.md for god nodes and community structure before searching raw files.\"}}'   || true ;; esac"
+          }
+        ]
+      }
     ]
   }
 }

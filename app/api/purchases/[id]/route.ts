@@ -1,6 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id: idStr } = await params;
+    const id = Number(idStr);
+    if (!id) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
+    const body = await req.json();
+    const updated = await prisma.fuelPurchase.update({
+      where: { id },
+      data: { isPaid: body.isPaid ?? true, paidNote: body.paidNote ?? null },
+      include: { fuelType: true },
+    });
+    return NextResponse.json(updated);
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: idStr } = await params;

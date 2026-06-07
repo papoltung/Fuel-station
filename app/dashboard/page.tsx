@@ -196,7 +196,10 @@ export default function DashboardPage() {
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
               className="text-xs text-gray-400 bg-transparent focus:outline-none cursor-pointer" />
           </div>
-          <button onClick={() => router.push("/sales/new")} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">+ บันทึกขาย</button>
+          <div className="flex gap-2">
+            <button onClick={() => router.push("/quick")} className="bg-green-500 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-green-600">⚡ ด่วน</button>
+            <button onClick={() => router.push("/sales/new")} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700">+ บันทึกขาย</button>
+          </div>
         </div>
         <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-none">
           <button onClick={() => router.push("/settings")} className="flex-shrink-0 text-gray-500 border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-medium">ตั้งราคา</button>
@@ -235,7 +238,7 @@ export default function DashboardPage() {
 
             {/* Amount grid */}
             <div className="grid grid-cols-3 gap-2">
-              {[50, 60, 80, 100, 500, 1000].map((amt) => (
+              {[50, 60, 80, 100, 150, 200, 300, 500, 1000].map((amt) => (
                 <button key={amt} type="button"
                   onClick={() => setQuickAmount(amt)}
                   className={`py-3 rounded-2xl font-bold text-lg transition-all active:scale-95

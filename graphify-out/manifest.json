@@ -1,0 +1,414 @@
+{
+  "C:\\Users\\USER\\Documents\\fuel-station\\discord-bot.js": {
+    "mtime": 1779669700.0605083,
+    "hash": "61159a1e507b47f5d1b0d3ec67e1cf12"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\eslint.config.mjs": {
+    "mtime": 1778897162.2740533,
+    "hash": "dfa1f5f6a7037bf39dc510f30b180002"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\install.ps1": {
+    "mtime": 1779250772.8997188,
+    "hash": "4d5b96f3fcda422247b6c34f10a80f3a"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\next-env.d.ts": {
+    "mtime": 1778899487.55878,
+    "hash": "d0f8375ae1199dc7acd3977fc33b78b8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\next.config.ts": {
+    "mtime": 1779241812.5504665,
+    "hash": "0a06fd5d31dfa37afa549cdab2f22278"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\postcss.config.mjs": {
+    "mtime": 1778897162.288761,
+    "hash": "239f3ebf717465dc636818a1a619398d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\start-tunnel.ps1": {
+    "mtime": 1779664435.70229,
+    "hash": "f86cfe6a00e5cb23afa78e4c281bc6d5"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\layout.tsx": {
+    "mtime": 1778897162.3571832,
+    "hash": "94c34ef68b3949a75807a0211ec2273c"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\page.tsx": {
+    "mtime": 1779191981.952365,
+    "hash": "cfd4842cc6996290e7d8ef4b709fcecd"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\cash-counts\\route.ts": {
+    "mtime": 1778911728.7206206,
+    "hash": "9d23c16216c13f50111895fa4897e666"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\cash-counts\\[id]\\route.ts": {
+    "mtime": 1778911735.413236,
+    "hash": "f72c3aa6464ce0145739cdf994f707c0"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\export\\sales\\route.ts": {
+    "mtime": 1778902878.4273498,
+    "hash": "2d211c4a474225a39a85f413ea81abb8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\fuel-stock\\route.ts": {
+    "mtime": 1778902572.8160856,
+    "hash": "fcd6a92d75859d8eb859b50b038f19e5"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\fuel-stock\\compare\\route.ts": {
+    "mtime": 1779160909.2639418,
+    "hash": "dd60d18e3807b6c3dcc87d7ccdb46e16"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\fuel-types\\route.ts": {
+    "mtime": 1778898158.4775102,
+    "hash": "078ce2a124d99cbead6d0ee348c6f6f5"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\fuel-types\\[id]\\route.ts": {
+    "mtime": 1778909056.6370287,
+    "hash": "48d191f1254a106f51e9669a506e1046"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\meter-periods\\route.ts": {
+    "mtime": 1778981394.8077958,
+    "hash": "20b18bf29923c7343e251c38624c6352"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\meter-periods\\[id]\\route.ts": {
+    "mtime": 1778910447.304235,
+    "hash": "a0bf85eef0cd3b1d763229d78b079519"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\product-sales\\route.ts": {
+    "mtime": 1778921064.6588757,
+    "hash": "184da609aff12af2ce9e7f25e761834f"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\product-sales\\[id]\\route.ts": {
+    "mtime": 1778921070.2817252,
+    "hash": "5772c63ec69044d7b7bca365ca1b73aa"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\products\\route.ts": {
+    "mtime": 1778922477.938792,
+    "hash": "82e1458463989a40deade9d8c8801b87"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\products\\[id]\\route.ts": {
+    "mtime": 1778923871.1413276,
+    "hash": "ef1683d5384e140f47e2c022bdf624f5"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\products\\[id]\\image\\route.ts": {
+    "mtime": 1778923864.7106924,
+    "hash": "0019fa3d2fa06d41a90fb6861161974f"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\purchases\\route.ts": {
+    "mtime": 1779161673.6787324,
+    "hash": "de5beeb77207fc5874f62016ad93fe4c"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\purchases\\[id]\\route.ts": {
+    "mtime": 1779161660.694805,
+    "hash": "dbbe8fd48378eba47586a4d03d7a27ca"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sale-orders\\route.ts": {
+    "mtime": 1779011706.87332,
+    "hash": "1d877c6557481510b4d6f279adbecbbb"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sale-orders\\[id]\\route.ts": {
+    "mtime": 1779328944.0958598,
+    "hash": "c3f62e3ff0b200a6573902cd99841e87"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sales\\route.ts": {
+    "mtime": 1778906058.9753535,
+    "hash": "bb8965f16fa0af6dc7b3064ed3e9f6d9"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sales\\summary\\route.ts": {
+    "mtime": 1780189648.4552958,
+    "hash": "6629ea2c5e05ce8a5e4a6f94d5e08874"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\sales\\[id]\\route.ts": {
+    "mtime": 1778915280.3977993,
+    "hash": "9f51a5a5c846fdad3676a080e9dcfca8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\stock-checks\\route.ts": {
+    "mtime": 1778908556.3414054,
+    "hash": "8bbbdcc8dd76b982fca02dbb227a6fdd"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\stock-checks\\[id]\\route.ts": {
+    "mtime": 1778908926.616842,
+    "hash": "9f6ab3cd79c55a622092de0cf7d5ed4e"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\supplier-debts\\route.ts": {
+    "mtime": 1779174340.2536108,
+    "hash": "c401982a530e2abd085516d197fc517d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\supplier-debts\\[id]\\route.ts": {
+    "mtime": 1779174356.223491,
+    "hash": "756ca09f909edea4d7a0ae38d5a72fad"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\api\\supplier-debts\\[id]\\payments\\[paymentId]\\route.ts": {
+    "mtime": 1779174553.086206,
+    "hash": "6f453bc9d1143847028504c18d7841c5"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\cash\\page.tsx": {
+    "mtime": 1778928155.5670881,
+    "hash": "6e3dd45c140206fa746805d935ffa03c"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\dashboard\\page.tsx": {
+    "mtime": 1779177132.5324433,
+    "hash": "808821e53fd6b6fac59847890e61a279"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\meter\\page.tsx": {
+    "mtime": 1778910741.3254209,
+    "hash": "5565678ebf5f10f5c1125144a947940f"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\purchases\\new\\page.tsx": {
+    "mtime": 1779161691.623856,
+    "hash": "33fe5f1591833f87b8b7d628c6da9e07"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\quick\\page.tsx": {
+    "mtime": 1779177992.0298188,
+    "hash": "3e3c5e41ecfd820035e31bbff146d687"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\sales\\new\\page.tsx": {
+    "mtime": 1778975159.5130801,
+    "hash": "63b80045ced67c2256b38c758b3f48bf"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\settings\\page.tsx": {
+    "mtime": 1778914220.892523,
+    "hash": "9d1bd5cd2e618082a6478ee0439f522d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\settings\\products\\page.tsx": {
+    "mtime": 1778929281.616889,
+    "hash": "951eaf7441d7b4dce4b46ba7e3635340"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\stock\\page.tsx": {
+    "mtime": 1780368051.227166,
+    "hash": "bf406d6082ce1e1f28cc10e67a4f1c69"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\app\\stock\\check\\page.tsx": {
+    "mtime": 1778901866.1843007,
+    "hash": "ecfaab264320198a7ce0f78d94997e8d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\lib\\prisma.ts": {
+    "mtime": 1778899460.9408102,
+    "hash": "9dabe220cf822b37eb199bdd730e3e96"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\seed-products.ts": {
+    "mtime": 1778922451.5760007,
+    "hash": "1657d6547eb280f007adc4208087691b"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\seed.ts": {
+    "mtime": 1778899467.542296,
+    "hash": "dedea5518073dfd4a537ee018761ab46"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516024414_init\\migration.sql": {
+    "mtime": 1779159489.2693303,
+    "hash": "154664d1e06f91f4d6650919d6fa4f52"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516025847_add_current_price\\migration.sql": {
+    "mtime": 1779159489.2703369,
+    "hash": "d70e35464155aa7f00148992a4cd929a"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516031042_meter_optional\\migration.sql": {
+    "mtime": 1779159489.2713277,
+    "hash": "08f16278f174a975117a72868182b883"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516032208_add_stock\\migration.sql": {
+    "mtime": 1779159489.2738242,
+    "hash": "ba25fd4e621c50234bcccb4562f8b950"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516053444_add_meter_period\\migration.sql": {
+    "mtime": 1779159489.2748065,
+    "hash": "241c1013f5b0986dbd01ed81fd546949"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516054700_meter_end_optional\\migration.sql": {
+    "mtime": 1779159489.2767572,
+    "hash": "48db9d1ed9226a8c5ff04d7d25ead68e"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516060827_add_cash_count\\migration.sql": {
+    "mtime": 1779159489.2777338,
+    "hash": "a3e0ad9d9cbec2721f21f2fa8b5e8e39"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516083630_add_products\\migration.sql": {
+    "mtime": 1779159489.2777338,
+    "hash": "f38fce45ba1cb58cd80a8ca4d1a51055"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516090710_add_product_cost_category\\migration.sql": {
+    "mtime": 1779159489.2802627,
+    "hash": "7ef518a2bcee3c192b151c1cfbeb85e4"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260516093044_add_product_image\\migration.sql": {
+    "mtime": 1779159489.2802627,
+    "hash": "9d90152846264b1bf39b683ff896ab8d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260517095328_add_sale_orders\\migration.sql": {
+    "mtime": 1779159489.2816257,
+    "hash": "80cd843ff8bd843cd1e9c19903421cd8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\prisma\\migrations\\20260519024524_add_ispaid_to_fuel_purchase\\migration.sql": {
+    "mtime": 1779158724.3041892,
+    "hash": "f25c450c1b9e638c99fd0e6baffee84b"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\AGENTS.md": {
+    "mtime": 1778897433.4738202,
+    "hash": "9e09241799026ac05be315a2f0b50055"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\CLAUDE.md": {
+    "mtime": 1780793601.3416219,
+    "hash": "4633626770864b8e9e5cbe3b9e27fd49"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\README.md": {
+    "mtime": 1778897162.261,
+    "hash": "f15aaa42d5d299d091b1171097ea56ad"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Caltex Super Diesel Oil 15W-40 7L.png": {
+    "mtime": 1778925793.1882772,
+    "hash": "7cda0dca5fa550389891b26075fa7ea8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Daikyo_Low_Smoke_2T.png": {
+    "mtime": 1778925087.4674916,
+    "hash": "219522c9f014ed9c6d560a84154c6bbd"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\havoline 20w-40.png": {
+    "mtime": 1778925835.838351,
+    "hash": "203263ebcee173e715a4f70e39f5439c"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Havoline Plus 2T.jpg": {
+    "mtime": 1778925234.8584037,
+    "hash": "6221d60e96b01a58fc7f4527f5acfe0d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\havoline SF 20w-40.png": {
+    "mtime": 1780650584.076759,
+    "hash": "cdd32347843e77eb7c0f0e642651f545"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Honda Protech Gold 4AT.png": {
+    "mtime": 1778925884.9411087,
+    "hash": "5ad1ef0bfc7ea37185a6e6b2aa9bcd4a"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Pro Honda 4T JASO MA30.png": {
+    "mtime": 1778926107.0630615,
+    "hash": "787ee58276fe94074811575343eb2e54"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\RAC Oil Super Turbo.png": {
+    "mtime": 1778925333.7755892,
+    "hash": "f1f6b0578884d44959a6c525df1d7306"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\seeson \u0e2a\u0e40\u0e1b\u0e23\u0e22\u0e4c\u0e2d\u0e40\u0e19\u0e01\u0e1b\u0e23\u0e30\u0e2a\u0e07\u0e04\u0e4c.png": {
+    "mtime": 1778926675.4882185,
+    "hash": "e460cd9d4bd6d7d0532f0745207091c3"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Shell Advance VSX.png": {
+    "mtime": 1778925485.7403445,
+    "hash": "cef9a5e56f028bb07e6c5fd965f879c6"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Shell Brake and Clutch Dot 3.png": {
+    "mtime": 1780561976.788726,
+    "hash": "94ef52fb9486329308d27aadb6c50c16"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\SHELL SX 2T 0.5.png": {
+    "mtime": 1778925419.8973303,
+    "hash": "07afea1f1d4a10932cdfc37609cecfc1"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Titan Coolant \u0e2a\u0e35\u0e0a\u0e21\u0e1e\u0e39.png": {
+    "mtime": 1778926246.5338664,
+    "hash": "900b0b444ae99ae1e5cab973f01723a0"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\Trane Super HD Gear Oil SAE90.png": {
+    "mtime": 1778926293.936333,
+    "hash": "4b1c19cad7f9d9db208d27db76f158fd"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\\u0e19\u0e49\u0e33\u0e21\u0e31\u0e19\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07 CF (3 \u0e25\u0e34\u0e15\u0e23) \u0e15\u0e23\u0e32\u0e0a\u0e49\u0e32\u0e07 \u0e2a\u0e39\u0e15\u0e23\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e04\u0e39\u0e42\u0e1a\u0e15\u0e49\u0e32.png": {
+    "mtime": 1779062282.4080367,
+    "hash": "1179023dee42d09d75eead52867f7e05"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\\u0e19\u0e49\u0e33\u0e21\u0e31\u0e19\u0e40\u0e04\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e40\u0e01\u0e29\u0e15\u0e23 \u0e15\u0e23\u0e32 \u0e0a\u0e49\u0e32\u0e07.png": {
+    "mtime": 1778926808.0285993,
+    "hash": "a76c5b8cd7fd4b70a06b2446648fffde"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\picture\\\u0e19\u0e49\u0e33\u0e21\u0e31\u0e19\u0e43\u0e2a\u0e48\u0e42\u0e0b\u0e48 ORAKON 4 L..png": {
+    "mtime": 1778926150.0025747,
+    "hash": "706a02fb8f9fc8866d0fa66c31eaded3"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\file.svg": {
+    "mtime": 1778897162.293766,
+    "hash": "d09f95206c3fa0bb9bd9fefabfd0ea71"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\globe.svg": {
+    "mtime": 1778897162.2997837,
+    "hash": "2aaafa6a49b6563925fe440891e32717"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\next.svg": {
+    "mtime": 1778897162.3077831,
+    "hash": "8e061864f388b47f33a1c3780831193e"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\vercel.svg": {
+    "mtime": 1778897162.3138146,
+    "hash": "c0af2f507b369b085b35ef4bbe3bcf1e"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\window.svg": {
+    "mtime": 1778897162.3208933,
+    "hash": "a2760511c65806022ad20adf74370ff3"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-11.png": {
+    "mtime": 1778926819.942028,
+    "hash": "a76c5b8cd7fd4b70a06b2446648fffde"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-12.png": {
+    "mtime": 1778926177.4581494,
+    "hash": "706a02fb8f9fc8866d0fa66c31eaded3"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-13.png": {
+    "mtime": 1778925498.8268797,
+    "hash": "cef9a5e56f028bb07e6c5fd965f879c6"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-14.jpg": {
+    "mtime": 1778925256.2015176,
+    "hash": "6221d60e96b01a58fc7f4527f5acfe0d"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-15.jpg": {
+    "mtime": 1778925039.358628,
+    "hash": "699d66232e214fe5e79036bbbb530198"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-15.png": {
+    "mtime": 1778925091.41937,
+    "hash": "219522c9f014ed9c6d560a84154c6bbd"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-16.png": {
+    "mtime": 1778925344.5061865,
+    "hash": "f1f6b0578884d44959a6c525df1d7306"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-17.png": {
+    "mtime": 1778926114.9934187,
+    "hash": "787ee58276fe94074811575343eb2e54"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-18.png": {
+    "mtime": 1778925892.2210822,
+    "hash": "5ad1ef0bfc7ea37185a6e6b2aa9bcd4a"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-19.png": {
+    "mtime": 1778925842.1344006,
+    "hash": "203263ebcee173e715a4f70e39f5439c"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-20.png": {
+    "mtime": 1778925798.4396853,
+    "hash": "7cda0dca5fa550389891b26075fa7ea8"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-21.png": {
+    "mtime": 1778926258.1215382,
+    "hash": "900b0b444ae99ae1e5cab973f01723a0"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-23.png": {
+    "mtime": 1778926685.1019452,
+    "hash": "e460cd9d4bd6d7d0532f0745207091c3"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-24.png": {
+    "mtime": 1778925434.8969975,
+    "hash": "07afea1f1d4a10932cdfc37609cecfc1"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-25.png": {
+    "mtime": 1779062308.4496236,
+    "hash": "1179023dee42d09d75eead52867f7e05"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-26.png": {
+    "mtime": 1780562036.1564398,
+    "hash": "94ef52fb9486329308d27aadb6c50c16"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-27.png": {
+    "mtime": 1780650596.244219,
+    "hash": "cdd32347843e77eb7c0f0e642651f545"
+  },
+  "C:\\Users\\USER\\Documents\\fuel-station\\public\\products\\product-8.png": {
+    "mtime": 1778926297.7744498,
+    "hash": "4b1c19cad7f9d9db208d27db76f158fd"
+  }
+}

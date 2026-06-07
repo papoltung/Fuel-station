@@ -10,22 +10,60 @@ export async function GET(req: NextRequest) {
   const end = new Date(dateStr);
   end.setHours(23, 59, 59, 999);
 
-  const [sales, productSales, purchases] = await Promise.all([
+  const [sales, productSales, purchases, allSales, stockChecks, meterPeriods] = await Promise.all([
     prisma.sale.findMany({ where: { date: { gte: start, lte: end } }, include: { fuelType: true } }),
     prisma.productSale.findMany({ where: { date: { gte: start, lte: end } } }),
-    prisma.fuelPurchase.findMany({ include: { fuelType: true } }),
+    prisma.fuelPurchase.findMany({ orderBy: { date: "asc" }, include: { fuelType: true } }),
+    prisma.sale.findMany({ orderBy: { date: "asc" }, select: { fuelTypeId: true, liters: true, date: true } }),
+    prisma.stockCheck.findMany({ orderBy: { date: "desc" } }),
+    prisma.meterPeriod.findMany({ orderBy: { date: "asc" } }),
   ]);
 
-  // weighted avg cost per liter per fuel type
+  function toDateKey(d: Date) { return d.toISOString().split("T")[0]; }
+
+  // FIFO avg cost — exact same logic as stock page ทุนเฉลี่ยในถัง card
   const avgCostByFuelId: Record<number, number> = {};
-  const purchasesByFuel: Record<number, { totalLiters: number; totalCost: number }> = {};
-  for (const p of purchases) {
-    if (!purchasesByFuel[p.fuelTypeId]) purchasesByFuel[p.fuelTypeId] = { totalLiters: 0, totalCost: 0 };
-    purchasesByFuel[p.fuelTypeId].totalLiters += p.liters;
-    purchasesByFuel[p.fuelTypeId].totalCost += p.totalCost;
-  }
-  for (const [id, d] of Object.entries(purchasesByFuel)) {
-    avgCostByFuelId[Number(id)] = d.totalLiters > 0 ? d.totalCost / d.totalLiters : 0;
+  const fuelTypeIds = [...new Set(purchases.map((p) => p.fuelTypeId))];
+  for (const ftId of fuelTypeIds) {
+    const lastCheck = stockChecks.find((c) => c.fuelTypeId === ftId);
+    const checkDate = lastCheck?.date ?? null;
+    const checkActual = lastCheck?.actualLiters ?? 0;
+    const isAfter = (d: Date) => !checkDate || d > checkDate;
+
+    // stockByMeter: mirror compare API exactly
+    const purchasesAfter = purchases.filter((p) => p.fuelTypeId === ftId && isAfter(new Date(p.date)));
+    const totalPurchasedAfter = purchasesAfter.reduce((a, p) => a + p.liters, 0);
+    const closedMeters = meterPeriods.filter(
+      (m) => m.fuelTypeId === ftId && m.liters !== null && m.meterEnd !== null && isAfter(new Date(m.date))
+    );
+    const meterDays = new Set(closedMeters.map((m) => toDateKey(new Date(m.date))));
+    const litersByMeter = closedMeters.reduce((a, m) => a + (m.liters ?? 0), 0);
+    const salesEstimate = allSales
+      .filter((s) => s.fuelTypeId === ftId && isAfter(new Date(s.date)) && !meterDays.has(toDateKey(new Date(s.date))))
+      .reduce((a, s) => a + s.liters, 0);
+    const remaining = Math.max(0, checkActual + totalPurchasedAfter - (litersByMeter + salesEstimate));
+
+    // FIFO cost: use ALL purchases newest-first (same as stock page — not filtered by checkDate)
+    const allPurchasesForFuel = purchases
+      .filter((p) => p.fuelTypeId === ftId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    if (remaining > 0) {
+      let need = remaining;
+      let totalCost = 0;
+      for (const p of allPurchasesForFuel) {
+        if (need <= 0) break;
+        const take = Math.min(need, p.liters);
+        totalCost += take * p.costPerLiter;
+        need -= take;
+      }
+      avgCostByFuelId[ftId] = totalCost / remaining;
+    } else {
+      // remaining = 0: fall back to all-time weighted avg
+      const totalL = allPurchasesForFuel.reduce((a, p) => a + p.liters, 0);
+      const totalC = allPurchasesForFuel.reduce((a, p) => a + p.totalCost, 0);
+      avgCostByFuelId[ftId] = totalL > 0 ? totalC / totalL : 0;
+    }
   }
 
   const fuelRevenue = sales.reduce((s, r) => s + r.totalAmount, 0);
