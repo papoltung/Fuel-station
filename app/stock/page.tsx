@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PinModal, { getStoredPin } from "@/components/PinModal";
 
 type StockItem = { id: number; fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type Purchase = { id: number; date: string; fuelTypeId: number; liters: number; costPerLiter: number; totalCost: number; invoiceNo: string | null; supplier: string | null; isPaid: boolean; paidNote: string | null; fuelType: { label: string; currentPrice: number } };
@@ -45,6 +46,7 @@ function shortDate(s: string) {
 
 export default function StockPage() {
   const router = useRouter();
+  const [unlocked, setUnlocked] = useState(false);
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -85,7 +87,10 @@ export default function StockPage() {
     });
   }
 
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    if (!getStoredPin()) setUnlocked(true);
+    reload();
+  }, []);
 
   async function deleteCheck(id: number, label: string) {
     if (!confirm(`ลบประวัติวัดถัง ${label}?\n(สต๊อกจะไม่เปลี่ยน)`)) return;
@@ -199,6 +204,7 @@ export default function StockPage() {
   const lowProductAlerts = products.filter((p) => p.isActive && p.currentStock <= p.minStock);
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
@@ -818,5 +824,9 @@ export default function StockPage() {
         )}
       </div>
     </div>
+    {!unlocked && (
+      <PinModal title="ใส่รหัสเพื่อเข้า Stock" onSuccess={() => setUnlocked(true)} onCancel={() => router.back()} />
+    )}
+    </>
   );
 }

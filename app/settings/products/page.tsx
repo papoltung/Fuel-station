@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import PinModal, { getStoredPin } from "@/components/PinModal";
 
 type Product = {
   id: number; name: string; category: string; size: string; unit: string;
@@ -13,6 +14,7 @@ const UNIT_OPTIONS = ["ขวด", "แกลลอน", "ชิ้น", "กร
 
 export default function ProductSettingsPage() {
   const router = useRouter();
+  const [unlocked, setUnlocked] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -51,7 +53,10 @@ export default function ProductSettingsPage() {
       })
       .catch(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!getStoredPin()) setUnlocked(true);
+    load();
+  }, []);
 
   async function saveProduct(id: number) {
     setSaving((v) => ({ ...v, [id]: true }));
@@ -142,6 +147,7 @@ export default function ProductSettingsPage() {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
       <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
@@ -390,5 +396,9 @@ export default function ProductSettingsPage() {
         )}
       </div>
     </div>
+    {!unlocked && (
+      <PinModal title="ใส่รหัสเพื่อเข้า สินค้า" onSuccess={() => setUnlocked(true)} onCancel={() => router.back()} />
+    )}
+    </>
   );
 }
