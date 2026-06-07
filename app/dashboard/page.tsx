@@ -57,7 +57,7 @@ function fmt(n: number) { return n.toLocaleString("th-TH", { minimumFractionDigi
 function fmtInt(n: number) { return n.toLocaleString("th-TH", { maximumFractionDigits: 0 }); }
 function fmtTime(dateStr: string) {
   const d = new Date(dateStr);
-  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0) return null;
+  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) return null;
   return d.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -154,29 +154,61 @@ export default function DashboardPage() {
     if (!ft || ft.currentPrice <= 0) return;
     const seller = localStorage.getItem("fuel_last_seller") ?? "N";
     const d = new Date();
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    const off = -d.getTimezoneOffset();
+    const tz = `${off >= 0 ? "+" : "-"}${String(Math.floor(Math.abs(off) / 60)).padStart(2, "0")}:${String(Math.abs(off) % 60).padStart(2, "0")}`;
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}${tz}`;
+    const amount = quickAmount;
+    const payment = quickPayment;
+
+    // optimistic: add to list immediately
+    const tempId = -Date.now();
+    const liters = amount / ft.currentPrice;
+    setSales((prev) => [{
+      id: tempId, date: dateStr, sellerName: seller,
+      fuelType: { label: ft.label, name: ft.name },
+      pumpNo: "หัวจ่าย 1", liters, pricePerLiter: ft.currentPrice,
+      totalAmount: amount, paymentMethod: payment, customerName: null,
+    }, ...prev]);
+    setSummary((prev) => {
+      if (!prev) return prev;
+      const byFuel = { ...prev.byFuel };
+      byFuel[ft.name] = byFuel[ft.name]
+        ? { ...byFuel[ft.name], liters: byFuel[ft.name].liters + liters, revenue: byFuel[ft.name].revenue + amount }
+        : { label: ft.label, liters, revenue: amount, cost: 0, profit: amount, avgCostPerLiter: 0 };
+      return {
+        ...prev,
+        totalRevenue: prev.totalRevenue + amount,
+        fuelRevenue: prev.fuelRevenue + amount,
+        totalLiters: prev.totalLiters + liters,
+        byFuel,
+        byPayment: { ...prev.byPayment, [payment]: (prev.byPayment[payment] ?? 0) + amount },
+        fuelByPayment: { ...prev.fuelByPayment, [payment]: (prev.fuelByPayment[payment] ?? 0) + amount },
+        count: prev.count + 1,
+      };
+    });
+    setQuickDone(true);
+    setQuickAmount(0);
+    setTimeout(() => setQuickDone(false), 1200);
+
     setQuickSaving(true);
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: dateStr,
-          sellerName: seller,
-          fuelTypeId: quickFuelId,
-          pumpNo: "หัวจ่าย 1",
-          totalAmount: String(quickAmount),
-          pricePerLiter: String(ft.currentPrice),
-          paymentMethod: quickPayment,
-          customerName: "",
+          date: dateStr, sellerName: seller, fuelTypeId: quickFuelId,
+          pumpNo: "หัวจ่าย 1", totalAmount: String(amount),
+          pricePerLiter: String(ft.currentPrice), paymentMethod: payment, customerName: "",
         }),
       });
-      if (res.ok) {
-        setQuickDone(true);
-        setQuickAmount(0);
-        setTimeout(() => setQuickDone(false), 1200);
-        refreshDay();
+      if (!res.ok) {
+        // rollback on failure
+        setSales((prev) => prev.filter((s) => s.id !== tempId));
       }
+      refreshDay(); // reconcile with server
+    } catch {
+      setSales((prev) => prev.filter((s) => s.id !== tempId));
+      refreshDay();
     } finally {
       setQuickSaving(false);
     }

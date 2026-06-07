@@ -133,7 +133,9 @@ client.on("interactionCreate", async (interaction) => {
         : fuels.find((f) => f.name === "benzin95");
       if (!fuel) { await interaction.reply({ content: "ไม่พบชนิดน้ำมัน", ephemeral: true }); return; }
       const d = new Date();
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      const off = -d.getTimezoneOffset();
+      const tz = `${off >= 0 ? "+" : "-"}${String(Math.floor(Math.abs(off)/60)).padStart(2,"0")}:${String(Math.abs(off)%60).padStart(2,"0")}`;
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}${tz}`;
       const res = await fetch(`${API_BASE}/api/sales`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -223,7 +225,9 @@ client.on("messageCreate", async (msg) => {
     else fuel = fuels[0];
     if (!fuel) { msg.react("❓"); return; }
     const d = new Date();
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+    const off = -d.getTimezoneOffset();
+    const tz = `${off >= 0 ? "+" : "-"}${String(Math.floor(Math.abs(off)/60)).padStart(2,"0")}:${String(Math.abs(off)%60).padStart(2,"0")}`;
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}${tz}`;
     const res = await fetch(`${API_BASE}/api/sales`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
