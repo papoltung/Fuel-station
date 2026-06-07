@@ -5,10 +5,9 @@ export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date");
   let where = {};
   if (date) {
-    const start = new Date(date);
-    const end = new Date(date);
-    end.setDate(end.getDate() + 1);
-    where = { date: { gte: start, lt: end } };
+    const start = new Date(date + "T00:00:00+07:00");
+    const end = new Date(date + "T23:59:59.999+07:00");
+    where = { date: { gte: start, lte: end } };
   }
   const sales = await prisma.productSale.findMany({
     where,

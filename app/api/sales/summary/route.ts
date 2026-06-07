@@ -5,10 +5,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const dateStr = searchParams.get("date") ?? new Date().toISOString().split("T")[0];
 
-  const start = new Date(dateStr);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(dateStr);
-  end.setHours(23, 59, 59, 999);
+  const start = new Date(dateStr + "T00:00:00+07:00");
+  const end = new Date(dateStr + "T23:59:59.999+07:00");
 
   const [sales, productSales, purchases, allSales, stockChecks, meterPeriods] = await Promise.all([
     prisma.sale.findMany({ where: { date: { gte: start, lte: end } }, include: { fuelType: true } }),

@@ -7,10 +7,8 @@ export async function GET(req: NextRequest) {
 
   let where = {};
   if (dateStr) {
-    const start = new Date(dateStr);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(dateStr);
-    end.setHours(23, 59, 59, 999);
+    const start = new Date(dateStr + "T00:00:00+07:00");
+    const end = new Date(dateStr + "T23:59:59.999+07:00");
     where = { date: { gte: start, lte: end } };
   }
 

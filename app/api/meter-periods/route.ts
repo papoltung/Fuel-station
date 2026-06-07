@@ -5,7 +5,7 @@ export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get("date");
     const where = date ? {
-      date: { gte: new Date(`${date}T00:00:00`), lt: new Date(`${date}T23:59:59`) },
+      date: { gte: new Date(`${date}T00:00:00+07:00`), lte: new Date(`${date}T23:59:59.999+07:00`) },
     } : undefined;
     const periods = await prisma.meterPeriod.findMany({
       where,
