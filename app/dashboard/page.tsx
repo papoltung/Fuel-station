@@ -308,10 +308,10 @@ export default function DashboardPage() {
             </div>
 
             {/* Save button */}
-            <button type="button" onClick={quickSave} disabled={quickSaving || quickAmount <= 0}
+            <button type="button" onClick={quickSave} disabled={quickDone || quickAmount <= 0}
               className={`w-full py-4 rounded-2xl font-bold text-lg transition-all active:scale-95
                 ${quickDone ? "bg-green-500 text-white" : quickAmount > 0 ? "bg-green-600 text-white hover:bg-green-700 shadow-sm" : "bg-gray-100 text-gray-400"}`}>
-              {quickDone ? "✓ บันทึกแล้ว" : quickSaving ? "..." : quickAmount > 0 ? `บันทึก ${quickAmount.toLocaleString("th-TH")} บาท` : "เลือกยอดเงิน"}
+              {quickDone ? "✓ บันทึกแล้ว" : quickAmount > 0 ? `บันทึก ${quickAmount.toLocaleString("th-TH")} บาท` : "เลือกยอดเงิน"}
             </button>
 
           </div>
