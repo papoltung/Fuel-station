@@ -154,7 +154,8 @@ export default function DashboardPage() {
   async function quickSave() {
     if (quickAmount <= 0) return;
     const ft = fuelTypes.find((f) => String(f.id) === quickFuelId);
-    if (!ft || ft.currentPrice <= 0) return;
+    if (!ft) return;
+    if (ft.currentPrice <= 0) { alert(`ยังไม่ได้ตั้งราคา ${ft.label} — ไปตั้งที่ Settings ก่อน`); return; }
     const seller = localStorage.getItem("fuel_last_seller") ?? "N";
     const d = new Date();
     const off = -d.getTimezoneOffset();
