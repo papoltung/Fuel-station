@@ -110,7 +110,7 @@ export default function NewSalePage() {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...fuelForm, pumpNo: `หัวจ่าย ${fuelForm.pumpNo}` }),
+        body: JSON.stringify({ ...fuelForm, pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`, date: fuelForm.date + "+07:00" }),
       });
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "บันทึกไม่สำเร็จ");
@@ -142,6 +142,7 @@ export default function NewSalePage() {
         body: JSON.stringify({
           ...productForm,
           totalAmount: productTotal,
+          date: productForm.date + "+07:00",
         }),
       });
       const data = await res.json();
