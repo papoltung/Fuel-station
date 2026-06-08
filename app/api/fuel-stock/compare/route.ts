@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 function toDateKey(d: Date) {
-  return d.toISOString().split("T")[0];
+  return new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split("T")[0];
 }
 
 export async function GET() {

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const dateStr = searchParams.get("date") ?? new Date().toISOString().split("T")[0];
+  const dateStr = searchParams.get("date") ?? new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().split("T")[0];
 
   const start = new Date(dateStr + "T00:00:00+07:00");
   const end = new Date(dateStr + "T23:59:59.999+07:00");
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     prisma.meterPeriod.findMany({ orderBy: { date: "asc" } }),
   ]);
 
-  function toDateKey(d: Date) { return d.toISOString().split("T")[0]; }
+  function toDateKey(d: Date) { return new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split("T")[0]; }
 
   // FIFO avg cost — exact same logic as stock page ทุนเฉลี่ยในถัง card
   const avgCostByFuelId: Record<number, number> = {};
