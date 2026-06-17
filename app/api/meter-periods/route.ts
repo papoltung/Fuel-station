@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(periods);
   } catch (e) {
     console.error("meter-periods GET error:", e);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
 

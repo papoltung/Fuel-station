@@ -11,7 +11,7 @@ export async function GET() {
     return NextResponse.json(purchases);
   } catch (e) {
     console.error("purchases GET error:", e);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
 

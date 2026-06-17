@@ -7,13 +7,30 @@ function toDateKey(d: Date) {
 
 export async function GET() {
   try {
-    const [fuelTypes, purchases, sales, meterPeriods, stocks, stockChecks] = await Promise.all([
+    const [fuelTypes, stocks, stockChecks] = await Promise.all([
       prisma.fuelType.findMany(),
-      prisma.fuelPurchase.findMany({ orderBy: { date: "asc" } }),
-      prisma.sale.findMany({ orderBy: { date: "asc" } }),
-      prisma.meterPeriod.findMany({ orderBy: { date: "asc" } }),
       prisma.fuelStock.findMany({ include: { fuelType: true } }),
-      prisma.stockCheck.findMany({ orderBy: { date: "desc" } }),
+      prisma.stockCheck.findMany({ orderBy: { date: "desc" }, distinct: ["fuelTypeId"] }),
+    ]);
+
+    const earliestCheck =
+      stockChecks.length > 0
+        ? new Date(Math.min(...stockChecks.map((c) => new Date(c.date).getTime())))
+        : undefined;
+
+    const [purchases, sales, meterPeriods] = await Promise.all([
+      prisma.fuelPurchase.findMany({
+        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+        orderBy: { date: "asc" },
+      }),
+      prisma.sale.findMany({
+        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+        orderBy: { date: "asc" },
+      }),
+      prisma.meterPeriod.findMany({
+        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+        orderBy: { date: "asc" },
+      }),
     ]);
 
     const result = fuelTypes.map((ft) => {
@@ -80,6 +97,6 @@ export async function GET() {
     return NextResponse.json(result);
   } catch (e) {
     console.error("fuel-stock/compare error:", e);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: "internal server error" }, { status: 500 });
   }
 }

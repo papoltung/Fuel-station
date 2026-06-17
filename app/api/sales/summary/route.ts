@@ -8,13 +8,28 @@ export async function GET(req: NextRequest) {
   const start = new Date(dateStr + "T00:00:00+07:00");
   const end = new Date(dateStr + "T23:59:59.999+07:00");
 
-  const [sales, productSales, purchases, allSales, stockChecks, meterPeriods] = await Promise.all([
+  const [sales, productSales, purchases, stockChecks] = await Promise.all([
     prisma.sale.findMany({ where: { date: { gte: start, lte: end } }, include: { fuelType: true } }),
     prisma.productSale.findMany({ where: { date: { gte: start, lte: end } } }),
-    prisma.fuelPurchase.findMany({ orderBy: { date: "asc" }, include: { fuelType: true } }),
-    prisma.sale.findMany({ orderBy: { date: "asc" }, select: { fuelTypeId: true, liters: true, date: true } }),
-    prisma.stockCheck.findMany({ orderBy: { date: "desc" } }),
-    prisma.meterPeriod.findMany({ orderBy: { date: "asc" } }),
+    prisma.fuelPurchase.findMany({ orderBy: { date: "asc" } }),
+    prisma.stockCheck.findMany({ orderBy: { date: "desc" }, distinct: ["fuelTypeId"] }),
+  ]);
+
+  const earliestCheck =
+    stockChecks.length > 0
+      ? new Date(Math.min(...stockChecks.map((c) => new Date(c.date).getTime())))
+      : undefined;
+
+  const [allSales, meterPeriods] = await Promise.all([
+    prisma.sale.findMany({
+      where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+      orderBy: { date: "asc" },
+      select: { fuelTypeId: true, liters: true, date: true },
+    }),
+    prisma.meterPeriod.findMany({
+      where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+      orderBy: { date: "asc" },
+    }),
   ]);
 
   function toDateKey(d: Date) { return new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split("T")[0]; }

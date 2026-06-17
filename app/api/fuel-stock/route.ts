@@ -10,6 +10,6 @@ export async function GET() {
     return NextResponse.json(stocks);
   } catch (e) {
     console.error("fuel-stock error:", e);
-    return NextResponse.json([], { status: 200 });
+    return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }

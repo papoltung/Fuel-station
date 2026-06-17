@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     where,
     include: { fuelType: true },
     orderBy: { createdAt: "desc" },
+    take: dateStr ? undefined : 200,
   });
 
   return NextResponse.json(sales);
