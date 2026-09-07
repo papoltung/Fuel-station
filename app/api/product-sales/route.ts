@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function GET(req: NextRequest) {
   const date = req.nextUrl.searchParams.get("date");
@@ -18,9 +19,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
   const body = await req.json();
-  const { productId, quantity, unitPrice, totalAmount, paymentMethod, sellerName, customerName, note, date } = body;
-  if (!productId || !quantity || !paymentMethod || !sellerName) {
+  const { productId, quantity, unitPrice, totalAmount, paymentMethod, customerName, note, date } = body;
+  if (!productId || !quantity || !paymentMethod) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
 
@@ -32,7 +35,7 @@ export async function POST(req: NextRequest) {
         unitPrice: Number(unitPrice),
         totalAmount: Number(totalAmount),
         paymentMethod,
-        sellerName,
+        sellerName: auth.user.name,
         customerName: customerName || null,
         note: note || null,
         date: date ? new Date(date) : new Date(),

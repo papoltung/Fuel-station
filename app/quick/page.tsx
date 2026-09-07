@@ -22,13 +22,15 @@ type Product = {
 };
 
 const PUMP_OPTIONS = ["1", "2", "3", "4"];
+
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "เงินสด", icon: "฿" },
   { value: "transfer", label: "โอน", icon: "⇄" },
   { value: "credit", label: "เครดิต", icon: "▣" },
 ];
+
 const QUICK_AMOUNTS = [100, 200, 300, 500, 1000];
-const SELLER_KEY = "fuel_last_seller";
+type Account = { name: string; role: "owner" | "manager" | "staff" };
 
 export default function NewSalePage() {
   const router = useRouter();
@@ -40,6 +42,11 @@ export default function NewSalePage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [successData, setSuccessData] = useState({ amount: 0, label: "" });
+  const [account, setAccount] = useState<Account | null>(null);
+
+  // product-shop UX
+  const [productSearch, setProductSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("ทั้งหมด");
 
   const nowDT = () => {
     const d = new Date();
@@ -72,11 +79,13 @@ export default function NewSalePage() {
   });
 
   useEffect(() => {
-    fetch("/api/fuel-types")
+    fetch("/api/fuel-types", { cache: "no-store" })
       .then((r) => r.json())
       .then((data: FuelType[]) => {
         setFuelTypes(data);
-        const firstAvailable = data.find((x) => Number(x.currentPrice) > 0) ?? data[0];
+        const firstAvailable =
+          data.find((x) => Number(x.currentPrice) > 0) ?? data[0];
+
         if (firstAvailable) {
           setFuelForm((f) => ({
             ...f,
@@ -90,10 +99,11 @@ export default function NewSalePage() {
       })
       .catch(() => setError("โหลดข้อมูลน้ำมันไม่สำเร็จ"));
 
-    fetch("/api/products")
+    fetch("/api/products", { cache: "no-store" })
       .then((r) => r.json())
       .then((data: Product[]) => {
         setProducts(data);
+
         if (data.length > 0) {
           setProductForm((f) => ({
             ...f,
@@ -102,13 +112,29 @@ export default function NewSalePage() {
           }));
         }
       })
-      .catch(() => {});
+      .catch(() => setError("โหลดข้อมูลสินค้าไม่สำเร็จ"));
 
-    const saved = localStorage.getItem(SELLER_KEY);
-    if (saved) {
-      setFuelForm((f) => ({ ...f, sellerName: saved }));
-      setProductForm((f) => ({ ...f, sellerName: saved }));
+    fetch("/api/me").then((response) => response.ok ? response.json() : null).then(setAccount);
+  }, []);
+
+  useEffect(() => {
+    async function refreshPrices() {
+      if (document.visibilityState === "hidden") return;
+      const response = await fetch("/api/fuel-types", { cache: "no-store" });
+      if (!response.ok) return;
+      const data: FuelType[] = await response.json();
+      setFuelTypes(data);
+      setFuelForm((form) => {
+        const selected = data.find((fuel) => String(fuel.id) === form.fuelTypeId);
+        return selected ? { ...form, pricePerLiter: selected.currentPrice > 0 ? String(selected.currentPrice) : "" } : form;
+      });
     }
+    window.addEventListener("focus", refreshPrices);
+    document.addEventListener("visibilitychange", refreshPrices);
+    return () => {
+      window.removeEventListener("focus", refreshPrices);
+      document.removeEventListener("visibilitychange", refreshPrices);
+    };
   }, []);
 
   function setFuel(field: string, value: string) {
@@ -128,11 +154,40 @@ export default function NewSalePage() {
 
   const fuelPrice = Number(fuelForm.pricePerLiter || 0);
   const fuelAmount = Number(fuelForm.totalAmount || 0);
-  const liters = fuelPrice > 0 && fuelAmount > 0 ? fuelAmount / fuelPrice : 0;
+  const liters =
+    fuelPrice > 0 && fuelAmount > 0 ? fuelAmount / fuelPrice : 0;
 
-  const selectedProduct = products.find((p) => String(p.id) === productForm.productId);
+  const selectedProduct = products.find(
+    (p) => String(p.id) === productForm.productId
+  );
+
   const productTotal =
     Number(productForm.quantity || 0) * Number(productForm.unitPrice || 0);
+
+  const categories = useMemo(() => {
+    const unique = Array.from(
+      new Set(products.map((p) => (p.category || "อื่นๆ").trim()))
+    );
+    return ["ทั้งหมด", ...unique];
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const q = productSearch.trim().toLowerCase();
+
+    return products.filter((p) => {
+      const category = (p.category || "อื่นๆ").trim();
+      const categoryOK =
+        activeCategory === "ทั้งหมด" || category === activeCategory;
+
+      const searchOK =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        category.toLowerCase().includes(q) ||
+        (p.size || "").toLowerCase().includes(q);
+
+      return categoryOK && searchOK;
+    });
+  }, [products, productSearch, activeCategory]);
 
   const canSubmitFuel =
     !loading &&
@@ -140,23 +195,35 @@ export default function NewSalePage() {
     fuelAmount > 0 &&
     fuelPrice > 0 &&
     !!fuelForm.paymentMethod &&
-    (fuelForm.paymentMethod !== "credit" || !!fuelForm.customerName.trim()) &&
-    !!fuelForm.sellerName.trim();
+    (fuelForm.paymentMethod !== "credit" ||
+      !!fuelForm.customerName.trim()) &&
+    !!account;
+
+  const canSubmitProduct =
+    !loading &&
+    !!productForm.productId &&
+    Number(productForm.quantity) > 0 &&
+    Number(productForm.unitPrice) > 0 &&
+    !!account &&
+    (productForm.paymentMethod !== "credit" ||
+      !!productForm.customerName.trim());
 
   async function submitFuel(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    if (!fuelForm.sellerName.trim()) return setError("กรอกชื่อคนขาย");
     if (!fuelForm.fuelTypeId) return setError("เลือกชนิดน้ำมัน");
-    if (!fuelForm.totalAmount || fuelAmount <= 0) return setError("กรอกยอดเงิน");
+    if (!fuelForm.totalAmount || fuelAmount <= 0)
+      return setError("กรอกยอดเงิน");
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
-    if (fuelForm.paymentMethod === "credit" && !fuelForm.customerName.trim())
+    if (
+      fuelForm.paymentMethod === "credit" &&
+      !fuelForm.customerName.trim()
+    )
       return setError("กรอกชื่อลูกค้าเครดิต");
 
     setLoading(true);
-    localStorage.setItem(SELLER_KEY, fuelForm.sellerName.trim());
 
     try {
       const res = await fetch("/api/sales", {
@@ -171,6 +238,7 @@ export default function NewSalePage() {
       });
 
       const data = await res.json();
+
       if (!res.ok) {
         setError(data.error ?? "บันทึกไม่สำเร็จ");
         return;
@@ -192,17 +260,18 @@ export default function NewSalePage() {
     e.preventDefault();
     setError("");
 
-    if (!productForm.sellerName.trim()) return setError("กรอกชื่อคนขาย");
     if (!productForm.productId) return setError("เลือกสินค้า");
     if (!productForm.quantity || Number(productForm.quantity) <= 0)
       return setError("กรอกจำนวน");
     if (!productForm.unitPrice || Number(productForm.unitPrice) <= 0)
       return setError("กรอกราคา");
-    if (productForm.paymentMethod === "credit" && !productForm.customerName.trim())
+    if (
+      productForm.paymentMethod === "credit" &&
+      !productForm.customerName.trim()
+    )
       return setError("กรอกชื่อลูกค้าเครดิต");
 
     setLoading(true);
-    localStorage.setItem(SELLER_KEY, productForm.sellerName.trim());
 
     try {
       const res = await fetch("/api/product-sales", {
@@ -216,6 +285,7 @@ export default function NewSalePage() {
       });
 
       const data = await res.json();
+
       if (!res.ok) {
         setError(data.error ?? "บันทึกไม่สำเร็จ");
         return;
@@ -238,12 +308,31 @@ export default function NewSalePage() {
   function resetForNextSale() {
     setSuccess(false);
     setError("");
+
     setFuelForm((f) => ({
       ...f,
       date: nowDT(),
       totalAmount: "",
       customerName: "",
     }));
+
+    setProductForm((f) => ({
+      ...f,
+      date: nowDT(),
+      quantity: "1",
+      customerName: "",
+    }));
+  }
+
+  function changeQty(delta: number) {
+    const current = Math.max(1, Number(productForm.quantity || 1));
+    const maxStock =
+      selectedProduct && selectedProduct.currentStock > 0
+        ? selectedProduct.currentStock
+        : current + delta;
+
+    const next = Math.max(1, Math.min(current + delta, maxStock));
+    setProd("quantity", String(next));
   }
 
   if (success) {
@@ -253,10 +342,13 @@ export default function NewSalePage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-3xl font-bold">
             ✓
           </div>
+
           <p className="text-sm text-slate-500">บันทึกการขายสำเร็จ</p>
+
           <p className="mt-2 text-4xl font-black text-slate-950 tabular-nums">
             ฿{successData.amount.toLocaleString("th-TH")}
           </p>
+
           <p className="mt-2 text-sm text-slate-500">{successData.label}</p>
 
           <div className="mt-7 grid gap-3">
@@ -267,6 +359,7 @@ export default function NewSalePage() {
             >
               ขายรายการถัดไป
             </button>
+
             <button
               type="button"
               onClick={() => router.push("/dashboard")}
@@ -295,13 +388,16 @@ export default function NewSalePage() {
 
           <div className="text-center">
             <h1 className="font-bold text-base">บันทึกการขาย</h1>
-            <p className="text-[11px] text-slate-400">แตะเลือก • ระบุยอด • บันทึก</p>
+            <p className="text-[11px] text-slate-400">
+              เลือกสินค้า • ชำระเงิน • บันทึก
+            </p>
           </div>
 
           <button
             type="button"
             onClick={() => {
-              setFuel("totalAmount", "");
+              if (saleType === "fuel") setFuel("totalAmount", "");
+              else setProd("quantity", "1");
               setError("");
             }}
             className="h-10 px-2 text-sm font-semibold text-blue-600"
@@ -312,6 +408,7 @@ export default function NewSalePage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
+        {account && <div className="mb-3 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3"><span className="grid size-9 place-items-center rounded-full bg-blue-600 font-black text-white">{account.name.slice(0, 1).toUpperCase()}</span><div><p className="text-xs text-blue-600">ขายโดย</p><p className="font-bold text-slate-900">{account.name}<span className="ml-1 text-xs font-semibold text-slate-500">· {account.role === "owner" ? "เจ้าของ" : account.role === "manager" ? "ผู้จัดการ" : "พนักงาน"}</span></p></div></div>}
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1">
           <button
             type="button"
@@ -340,15 +437,19 @@ export default function NewSalePage() {
                 : "text-slate-500"
             }`}
           >
-            ▣ สินค้า
+            🛍 สินค้า
           </button>
         </div>
       </div>
 
       {saleType === "fuel" ? (
-        <form onSubmit={submitFuel} className="max-w-lg mx-auto px-4 pt-5 pb-36 space-y-6">
+        <form
+          onSubmit={submitFuel}
+          className="max-w-lg mx-auto px-4 pt-5 pb-36 space-y-6"
+        >
           <section>
             <SectionTitle title="เลือกน้ำมัน" />
+
             <div className="grid grid-cols-2 gap-3">
               {fuelTypes.map((ft) => {
                 const active = fuelForm.fuelTypeId === String(ft.id);
@@ -361,7 +462,10 @@ export default function NewSalePage() {
                     disabled={!available}
                     onClick={() => {
                       setFuel("fuelTypeId", String(ft.id));
-                      setFuel("pricePerLiter", available ? String(ft.currentPrice) : "");
+                      setFuel(
+                        "pricePerLiter",
+                        available ? String(ft.currentPrice) : ""
+                      );
                     }}
                     className={`relative min-h-[92px] rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
                       active
@@ -370,13 +474,17 @@ export default function NewSalePage() {
                     } ${!available ? "opacity-45" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-extrabold text-base">{ft.label}</span>
+                      <span className="font-extrabold text-base">
+                        {ft.label}
+                      </span>
+
                       {active && (
                         <span className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-xs">
                           ✓
                         </span>
                       )}
                     </div>
+
                     <p
                       className={`mt-3 text-sm tabular-nums ${
                         active ? "text-blue-100" : "text-slate-500"
@@ -394,9 +502,11 @@ export default function NewSalePage() {
 
           <section>
             <SectionTitle title="ยอดขาย" />
+
             <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-black text-slate-800">฿</span>
+
                 <input
                   type="number"
                   inputMode="decimal"
@@ -413,9 +523,11 @@ export default function NewSalePage() {
                 <span className="font-bold text-blue-600 tabular-nums">
                   {liters > 0 ? `≈ ${liters.toFixed(2)} L` : "เลือกจำนวนเงิน"}
                 </span>
+
                 {fuelPrice > 0 && (
                   <>
                     <span className="text-slate-300">•</span>
+
                     <span className="text-slate-500 tabular-nums">
                       {fuelPrice.toFixed(2)} บาท/L
                     </span>
@@ -427,6 +539,7 @@ export default function NewSalePage() {
             <div className="mt-3 grid grid-cols-3 gap-2">
               {QUICK_AMOUNTS.map((amt) => {
                 const active = fuelForm.totalAmount === String(amt);
+
                 return (
                   <button
                     key={amt}
@@ -442,6 +555,7 @@ export default function NewSalePage() {
                   </button>
                 );
               })}
+
               <button
                 type="button"
                 onClick={() => setFuel("totalAmount", "")}
@@ -454,14 +568,20 @@ export default function NewSalePage() {
 
           <section>
             <SectionTitle title="วิธีชำระเงิน" />
-            <PaymentRow value={fuelForm.paymentMethod} onChange={(v) => setFuel("paymentMethod", v)} />
+
+            <PaymentRow
+              value={fuelForm.paymentMethod}
+              onChange={(v) => setFuel("paymentMethod", v)}
+            />
           </section>
 
           <section>
             <SectionTitle title="หัวจ่าย" />
+
             <div className="grid grid-cols-4 gap-2">
               {PUMP_OPTIONS.map((p) => {
                 const active = fuelForm.pumpNo === p;
+
                 return (
                   <button
                     key={p}
@@ -483,6 +603,7 @@ export default function NewSalePage() {
           {fuelForm.paymentMethod === "credit" && (
             <section>
               <SectionTitle title="ลูกค้าเครดิต" />
+
               <input
                 type="text"
                 value={fuelForm.customerName}
@@ -496,11 +617,16 @@ export default function NewSalePage() {
           <details className="group rounded-[22px] border border-slate-200 bg-white shadow-sm">
             <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between font-semibold text-sm">
               <span>ข้อมูลเพิ่มเติม</span>
-              <span className="text-slate-400 group-open:rotate-180 transition">↓</span>
+              <span className="text-slate-400 group-open:rotate-180 transition">
+                ↓
+              </span>
             </summary>
+
             <div className="border-t border-slate-100 p-4 space-y-4">
-              <SellerRow value={fuelForm.sellerName} onChange={(v) => setFuel("sellerName", v)} />
-              <DateRow value={fuelForm.date} onChange={(v) => setFuel("date", v)} />
+              <DateRow
+                value={fuelForm.date}
+                onChange={(v) => setFuel("date", v)}
+              />
             </div>
           </details>
 
@@ -513,10 +639,12 @@ export default function NewSalePage() {
                   {selectedFuel?.label ?? "เลือกน้ำมัน"}
                   {liters > 0 ? ` · ${liters.toFixed(2)} L` : ""}
                 </span>
+
                 <span className="ml-3 font-black tabular-nums">
                   ฿{fuelAmount.toLocaleString("th-TH")}
                 </span>
               </div>
+
               <button
                 type="submit"
                 disabled={!canSubmitFuel}
@@ -532,135 +660,295 @@ export default function NewSalePage() {
           </div>
         </form>
       ) : (
-        <form onSubmit={submitProduct} className="max-w-lg mx-auto px-4 pt-5 pb-10 space-y-6">
-          {products.length === 0 ? (
-            <div className="rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
-              <div className="text-4xl">📦</div>
-              <p className="mt-3 font-bold">ยังไม่มีสินค้า</p>
-              <button
-                type="button"
-                onClick={() => router.push("/settings/products")}
-                className="mt-5 h-11 px-5 rounded-xl bg-blue-600 text-white font-semibold"
-              >
-                ไปที่การตั้งค่าสินค้า
-              </button>
-            </div>
-          ) : (
-            <>
-              <section>
-                <SectionTitle title="เลือกสินค้า" />
-                <div className="space-y-2">
-                  {products.map((p) => {
-                    const active = productForm.productId === String(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setProd("productId", String(p.id));
-                          setProd("unitPrice", String(p.currentPrice));
-                        }}
-                        className={`w-full rounded-[20px] border p-3 flex items-center gap-3 text-left transition ${
-                          active
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-slate-200 bg-white"
-                        }`}
-                      >
-                        <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-xl">
-                          ▣
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="font-bold truncate">{p.name}</p>
-                          <p className="text-xs text-slate-400">
-                            คงเหลือ {p.currentStock} {p.unit}
-                          </p>
-                        </div>
-                        <div className="font-bold tabular-nums">
-                          ฿{Number(p.currentPrice).toLocaleString("th-TH")}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+        <form
+          onSubmit={submitProduct}
+          className="max-w-lg mx-auto px-4 pt-4 pb-40 space-y-5"
+        >
+          {/* Search */}
+          <section>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                ⌕
+              </span>
 
-              <section className="grid grid-cols-2 gap-3">
-                <div>
-                  <SectionTitle title={`จำนวน (${selectedProduct?.unit ?? "ชิ้น"})`} />
+              <input
+                type="search"
+                value={productSearch}
+                onChange={(e) => setProductSearch(e.target.value)}
+                placeholder="ค้นหาสินค้า..."
+                className="w-full h-12 rounded-2xl border border-slate-200 bg-white pl-11 pr-4 text-sm outline-none focus:border-blue-500 shadow-sm"
+              />
+            </div>
+          </section>
+
+          {/* Category pills */}
+          <section className="-mx-4">
+            <div className="flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-hide">
+              {categories.map((cat) => {
+                const active = activeCategory === cat;
+
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategory(cat)}
+                    className={`shrink-0 rounded-full border px-4 h-10 text-sm font-semibold transition ${
+                      active
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Product grid */}
+          <section>
+            <div className="flex items-end justify-between mb-3">
+              <div>
+                <h2 className="text-base font-extrabold">สินค้า</h2>
+                <p className="text-xs text-slate-400">
+                  {filteredProducts.length} รายการ
+                </p>
+              </div>
+            </div>
+
+            {filteredProducts.length === 0 ? (
+              <div className="rounded-[24px] border border-slate-200 bg-white p-8 text-center">
+                <div className="text-4xl">🔎</div>
+                <p className="mt-3 font-bold">ไม่พบสินค้า</p>
+                <p className="mt-1 text-sm text-slate-400">
+                  ลองค้นหาด้วยชื่อหรือหมวดหมู่อื่น
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {filteredProducts.map((p) => {
+                  const active = productForm.productId === String(p.id);
+                  const soldOut = Number(p.currentStock) <= 0;
+
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={soldOut}
+                      onClick={() => {
+                        setProd("productId", String(p.id));
+                        setProd("unitPrice", String(p.currentPrice));
+                        setProd("quantity", "1");
+                      }}
+                      className={`overflow-hidden rounded-[22px] border bg-white text-left transition active:scale-[0.98] ${
+                        active
+                          ? "border-blue-500 ring-2 ring-blue-100 shadow-md"
+                          : "border-slate-200 shadow-sm"
+                      } ${soldOut ? "opacity-50" : ""}`}
+                    >
+                      <div className="relative aspect-[1/1] bg-slate-100 overflow-hidden">
+                        {p.image ? (
+                          <img
+                            src={p.image}
+                            alt={p.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-4xl">
+                            🛢
+                          </div>
+                        )}
+
+                        <div className="absolute top-2 left-2">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur ${
+                              soldOut
+                                ? "bg-red-500/90 text-white"
+                                : "bg-white/90 text-slate-700"
+                            }`}
+                          >
+                            {soldOut
+                              ? "หมด"
+                              : `เหลือ ${p.currentStock} ${p.unit}`}
+                          </span>
+                        </div>
+
+                        {active && (
+                          <div className="absolute top-2 right-2 h-7 w-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs shadow">
+                            ✓
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="p-3">
+                        <p className="font-extrabold text-sm leading-5 line-clamp-2 min-h-[40px]">
+                          {p.name}
+                        </p>
+
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <span className="text-xs text-slate-400 truncate">
+                            {p.size || p.category || "สินค้า"}
+                          </span>
+                        </div>
+
+                        <p className="mt-2 text-lg font-black text-slate-950 tabular-nums">
+                          ฿{Number(p.currentPrice).toLocaleString("th-TH")}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Selected product / mini cart */}
+          {selectedProduct && (
+            <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex gap-3">
+                <div className="h-16 w-16 overflow-hidden rounded-2xl bg-slate-100 shrink-0">
+                  {selectedProduct.image ? (
+                    <img
+                      src={selectedProduct.image}
+                      alt={selectedProduct.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-2xl">
+                      🛢
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold leading-5 truncate">
+                    {selectedProduct.name}
+                  </p>
+
+                  <p className="mt-1 text-sm text-slate-400">
+                    ฿{Number(productForm.unitPrice || 0).toLocaleString("th-TH")} /{" "}
+                    {selectedProduct.unit || "ชิ้น"}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-xs text-slate-400">รวม</p>
+                  <p className="text-lg font-black tabular-nums">
+                    ฿{productTotal.toLocaleString("th-TH")}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-50 p-2">
+                <span className="pl-2 text-sm font-semibold text-slate-600">
+                  จำนวน
+                </span>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => changeQty(-1)}
+                    className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-xl font-bold"
+                  >
+                    −
+                  </button>
+
                   <input
                     type="number"
-                    inputMode="numeric"
                     min="1"
+                    max={selectedProduct.currentStock || undefined}
                     value={productForm.quantity}
                     onChange={(e) => setProd("quantity", e.target.value)}
-                    className="w-full h-14 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold outline-none focus:border-blue-500"
-                    required
+                    className="w-12 bg-transparent text-center text-lg font-black outline-none tabular-nums"
                   />
-                </div>
-                <div>
-                  <SectionTitle title="ราคา/หน่วย" />
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    value={productForm.unitPrice}
-                    onChange={(e) => setProd("unitPrice", e.target.value)}
-                    className="w-full h-14 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums outline-none focus:border-blue-500"
-                    required
-                  />
-                </div>
-              </section>
 
-              <div className="rounded-[24px] bg-blue-600 p-5 text-white shadow-lg shadow-blue-600/15">
-                <p className="text-sm text-blue-100">ยอดรวม</p>
-                <p className="mt-1 text-4xl font-black tabular-nums">
+                  <button
+                    type="button"
+                    onClick={() => changeQty(1)}
+                    className="h-10 w-10 rounded-xl border border-slate-200 bg-white text-xl font-bold"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <section>
+            <SectionTitle title="วิธีชำระเงิน" />
+
+            <PaymentRow
+              value={productForm.paymentMethod}
+              onChange={(v) => setProd("paymentMethod", v)}
+            />
+          </section>
+
+          {productForm.paymentMethod === "credit" && (
+            <section>
+              <SectionTitle title="ลูกค้าเครดิต" />
+
+              <input
+                type="text"
+                value={productForm.customerName}
+                onChange={(e) => setProd("customerName", e.target.value)}
+                placeholder="ชื่อลูกค้า / บริษัท"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
+              />
+            </section>
+          )}
+
+          <details className="group rounded-[22px] border border-slate-200 bg-white shadow-sm">
+            <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between font-semibold text-sm">
+              <span>ข้อมูลเพิ่มเติม</span>
+              <span className="text-slate-400 group-open:rotate-180 transition">
+                ↓
+              </span>
+            </summary>
+
+            <div className="border-t border-slate-100 p-4 space-y-4">
+              <DateRow
+                value={productForm.date}
+                onChange={(v) => setProd("date", v)}
+              />
+            </div>
+          </details>
+
+          {error && <ErrorBox msg={error} />}
+
+          {/* Sticky checkout */}
+          <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur">
+            <div className="max-w-lg mx-auto px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-700">
+                    {selectedProduct?.name ?? "เลือกสินค้า"}
+                  </p>
+
+                  <p className="text-xs text-slate-400">
+                    {selectedProduct
+                      ? `${productForm.quantity} ${selectedProduct.unit || "ชิ้น"}`
+                      : "เลือกรายการก่อนชำระเงิน"}
+                  </p>
+                </div>
+
+                <p className="text-xl font-black tabular-nums">
                   ฿{productTotal.toLocaleString("th-TH")}
                 </p>
               </div>
 
-              <section>
-                <SectionTitle title="วิธีชำระเงิน" />
-                <PaymentRow value={productForm.paymentMethod} onChange={(v) => setProd("paymentMethod", v)} />
-              </section>
-
-              {productForm.paymentMethod === "credit" && (
-                <section>
-                  <SectionTitle title="ลูกค้าเครดิต" />
-                  <input
-                    type="text"
-                    value={productForm.customerName}
-                    onChange={(e) => setProd("customerName", e.target.value)}
-                    placeholder="ชื่อลูกค้า / บริษัท"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
-                  />
-                </section>
-              )}
-
-              <details className="group rounded-[22px] border border-slate-200 bg-white shadow-sm">
-                <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between font-semibold text-sm">
-                  <span>ข้อมูลเพิ่มเติม</span>
-                  <span className="text-slate-400 group-open:rotate-180 transition">↓</span>
-                </summary>
-                <div className="border-t border-slate-100 p-4 space-y-4">
-                  <SellerRow value={productForm.sellerName} onChange={(v) => setProd("sellerName", v)} />
-                  <DateRow value={productForm.date} onChange={(v) => setProd("date", v)} />
-                </div>
-              </details>
-
-              {error && <ErrorBox msg={error} />}
-
               <button
                 type="submit"
-                disabled={loading || productTotal <= 0}
-                className="w-full h-14 rounded-2xl bg-blue-600 text-white font-extrabold text-lg disabled:bg-slate-200 disabled:text-slate-400"
+                disabled={!canSubmitProduct}
+                className="w-full h-14 rounded-2xl bg-blue-600 text-white font-extrabold text-lg shadow-lg shadow-blue-600/15 transition active:scale-[0.99] disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
               >
                 {loading
                   ? "กำลังบันทึก..."
-                  : `บันทึก ฿${productTotal.toLocaleString("th-TH")}`}
+                  : selectedProduct
+                  ? `ชำระเงิน ฿${productTotal.toLocaleString("th-TH")}`
+                  : "เลือกสินค้า"}
               </button>
-            </>
-          )}
+            </div>
+          </div>
         </form>
       )}
     </main>
@@ -668,7 +956,11 @@ export default function NewSalePage() {
 }
 
 function SectionTitle({ title }: { title: string }) {
-  return <p className="mb-2 text-[13px] font-bold text-slate-700">{title}</p>;
+  return (
+    <p className="mb-2 text-[13px] font-bold text-slate-700">
+      {title}
+    </p>
+  );
 }
 
 function PaymentRow({
@@ -682,6 +974,7 @@ function PaymentRow({
     <div className="grid grid-cols-3 gap-2">
       {PAYMENT_OPTIONS.map((p) => {
         const active = value === p.value;
+
         return (
           <button
             key={p.value}
@@ -702,28 +995,6 @@ function PaymentRow({
   );
 }
 
-function SellerRow({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-xs font-semibold text-slate-500">คนขาย</label>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="ชื่อคนขาย"
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
-        required
-      />
-    </div>
-  );
-}
-
 function DateRow({
   value,
   onChange,
@@ -733,7 +1004,10 @@ function DateRow({
 }) {
   return (
     <div>
-      <label className="mb-2 block text-xs font-semibold text-slate-500">วันและเวลา</label>
+      <label className="mb-2 block text-xs font-semibold text-slate-500">
+        วันและเวลา
+      </label>
+
       <input
         type="datetime-local"
         value={value}

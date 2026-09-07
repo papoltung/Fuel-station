@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const all = req.nextUrl.searchParams.get("all") === "1";
   const products = await prisma.product.findMany({
     where: all ? undefined : { isActive: true },
     orderBy: { name: "asc" },
   });
-  return NextResponse.json(products);
+  return NextResponse.json(products, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(req: NextRequest) {

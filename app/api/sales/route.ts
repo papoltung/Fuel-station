@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isSameSaleRequest, parseSaleInput } from "@/lib/sale-input";
+import { requireRole } from "@/lib/authz";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -25,9 +26,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
   let input: ReturnType<typeof parseSaleInput>;
   try {
-    input = parseSaleInput(await req.json());
+    input = parseSaleInput({ ...await req.json(), sellerName: auth.user.name });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
   }

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/authz";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const fuelTypes = await prisma.fuelType.findMany({ orderBy: { name: "asc" } });
-  return NextResponse.json(fuelTypes);
+  return NextResponse.json(fuelTypes, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {
