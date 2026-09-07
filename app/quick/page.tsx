@@ -70,6 +70,7 @@ export default function QuickPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          clientRequestId: crypto.randomUUID(),
           date: dateStr,
           sellerName: seller,
           fuelTypeId: fuelId,

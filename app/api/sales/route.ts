@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseSaleInput } from "@/lib/sale-input";
+import { isSameSaleRequest, parseSaleInput } from "@/lib/sale-input";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -66,14 +66,7 @@ export async function POST(req: NextRequest) {
         where: { clientRequestId: input.clientRequestId },
         include: { fuelType: true },
       });
-      const sameRequest = existing
-        && existing.fuelTypeId === input.fuelTypeId
-        && existing.sellerName === input.sellerName
-        && existing.pumpNo === input.pumpNo
-        && existing.pricePerLiter === input.pricePerLiter
-        && existing.totalAmount === input.totalAmount
-        && existing.paymentMethod === input.paymentMethod
-        && existing.customerName === input.customerName;
+      const sameRequest = existing && isSameSaleRequest(existing, input);
       if (sameRequest) return NextResponse.json(existing, { status: 200, headers: { "Idempotent-Replay": "true" } });
       return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
     }

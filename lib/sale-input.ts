@@ -60,7 +60,7 @@ export function parseSaleInput(input: SaleInput) {
   }
 
   const clientRequestId = optionalText(input.clientRequestId);
-  if (clientRequestId && clientRequestId.length > 100) throw new Error("รหัสรายการไม่ถูกต้อง");
+  if (!clientRequestId || clientRequestId.length > 100) throw new Error("รหัสรายการไม่ถูกต้อง");
   const date = optionalText(input.date) ?? undefined;
   if (date && Number.isNaN(new Date(date).getTime())) throw new Error("วันที่ไม่ถูกต้อง");
 
@@ -79,4 +79,36 @@ export function parseSaleInput(input: SaleInput) {
     meterStart,
     meterEnd,
   };
+}
+
+type StoredSale = {
+  clientRequestId: string | null;
+  sellerName: string;
+  fuelTypeId: number;
+  pumpNo: string;
+  pricePerLiter: number;
+  totalAmount: number;
+  liters: number;
+  paymentMethod: string;
+  customerName: string | null;
+  note: string | null;
+  date: Date;
+  meterStart: number | null;
+  meterEnd: number | null;
+};
+
+export function isSameSaleRequest(existing: StoredSale, input: ReturnType<typeof parseSaleInput>) {
+  return existing.clientRequestId === input.clientRequestId
+    && existing.fuelTypeId === input.fuelTypeId
+    && existing.sellerName === input.sellerName
+    && existing.pumpNo === input.pumpNo
+    && existing.pricePerLiter === input.pricePerLiter
+    && existing.totalAmount === input.totalAmount
+    && existing.liters === input.liters
+    && existing.paymentMethod === input.paymentMethod
+    && existing.customerName === input.customerName
+    && existing.note === input.note
+    && existing.meterStart === input.meterStart
+    && existing.meterEnd === input.meterEnd
+    && (!input.date || existing.date.getTime() === new Date(input.date).getTime());
 }

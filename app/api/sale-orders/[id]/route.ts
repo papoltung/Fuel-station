@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const [sale] = await prisma.$transaction([
       prisma.sale.create({
         data: {
+          clientRequestId: `sale-order-${order.id}`,
           date: now,
           sellerName: order.sellerName,
           fuelTypeId: order.fuelTypeId,

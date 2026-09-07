@@ -38,6 +38,7 @@ async function main() {
       update: {},
       create: {
         id: Number(r.id),
+        clientRequestId: `legacy-${Number(r.id)}`,
         date: new Date(String(r.date)),
         sellerName: String(r.sellerName),
         fuelTypeId: Number(r.fuelTypeId),

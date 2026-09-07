@@ -24,7 +24,7 @@ model FuelType {
 
 model Sale {
   id            Int      @id @default(autoincrement())
-  clientRequestId String? @unique
+  clientRequestId String  @unique
   date          DateTime @default(now())
   sellerName    String
   fuelType      FuelType @relation(fields: [fuelTypeId], references: [id])

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseSaleInput } from "./sale-input";
+import { isSameSaleRequest, parseSaleInput } from "./sale-input";
 
 test("parses an amount sale and keeps its request id", () => {
   assert.deepEqual(
@@ -53,4 +53,38 @@ test("requires a customer for a credit sale", () => {
       paymentMethod: "credit",
     }),
   );
+});
+
+test("requires a request id so retries cannot create a second sale", () => {
+  assert.throws(() =>
+    parseSaleInput({
+      sellerName: "N",
+      fuelTypeId: 1,
+      pumpNo: "1",
+      pricePerLiter: 35,
+      totalAmount: 100,
+      paymentMethod: "cash",
+    }),
+  );
+});
+
+test("detects a reused request id with changed payload", () => {
+  const request = parseSaleInput({
+    clientRequestId: "same-request",
+    sellerName: "N",
+    fuelTypeId: 1,
+    pumpNo: "1",
+    pricePerLiter: 35,
+    totalAmount: 100,
+    paymentMethod: "cash",
+    note: "original",
+    date: "2026-09-07T10:00:00+07:00",
+  });
+  const existing = {
+    ...request,
+    id: 1,
+    date: new Date(request.date!),
+    note: "changed",
+  };
+  assert.equal(isSameSaleRequest(existing, request), false);
 });
