@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type FuelType = {
   id: number;
@@ -31,14 +31,13 @@ type Sale = {
 };
 
 function fmt(n: number) {
-  return n.toLocaleString("th-TH", {
-    minimumFractionDigits: 0,
+  return Number(n || 0).toLocaleString("th-TH", {
     maximumFractionDigits: 0,
   });
 }
 
 function fmtDec(n: number) {
-  return n.toLocaleString("th-TH", {
+  return Number(n || 0).toLocaleString("th-TH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -52,6 +51,14 @@ function shortDate(s: string) {
   });
 }
 
+function displayDate() {
+  return new Date().toLocaleDateString("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 const FUEL_COLOR: Record<string, string> = {
   diesel: "bg-amber-400",
   benzin95: "bg-blue-500",
@@ -59,15 +66,16 @@ const FUEL_COLOR: Record<string, string> = {
   e20: "bg-violet-500",
 };
 
-const FUEL_SOFT: Record<string, string> = {
-  diesel: "bg-amber-50 text-amber-700 border-amber-100",
-  benzin95: "bg-blue-50 text-blue-700 border-blue-100",
-  benzin91: "bg-emerald-50 text-emerald-700 border-emerald-100",
-  e20: "bg-violet-50 text-violet-700 border-violet-100",
+const FUEL_ICON_BG: Record<string, string> = {
+  diesel: "bg-amber-50 text-amber-600",
+  benzin95: "bg-blue-50 text-blue-600",
+  benzin91: "bg-emerald-50 text-emerald-600",
+  e20: "bg-violet-50 text-violet-600",
 };
 
 export default function MeterPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const today = new Date().toISOString().split("T")[0];
 
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
@@ -94,27 +102,23 @@ export default function MeterPage() {
     setLoading(true);
 
     Promise.all([
-      fetch("/api/fuel-types")
-        .then((r) => r.json())
-        .catch(() => []),
-      fetch("/api/meter-periods")
-        .then((r) => r.json())
-        .catch(() => []),
-      fetch("/api/sales")
-        .then((r) => r.json())
-        .catch(() => []),
+      fetch("/api/fuel-types").then((r) => r.json()).catch(() => []),
+      fetch("/api/meter-periods").then((r) => r.json()).catch(() => []),
+      fetch("/api/sales").then((r) => r.json()).catch(() => []),
     ]).then(([ft, mp, sl]) => {
-      const filtered = (ft as FuelType[]).filter((f: FuelType) =>
+      const allFuel = (ft as FuelType[]) ?? [];
+      const filtered = allFuel.filter((f) =>
         ["diesel", "benzin95"].includes(f.name)
       );
 
-      setFuelTypes(filtered.length > 0 ? filtered : ft);
+      const useFuel = filtered.length > 0 ? filtered : allFuel;
+
+      setFuelTypes(useFuel);
       setPeriods(mp ?? []);
       setAllSales(sl ?? []);
 
-      if ((ft as FuelType[]).length > 0) {
-        const first = filtered.length > 0 ? filtered[0] : ft[0];
-
+      if (useFuel.length > 0) {
+        const first = useFuel[0];
         setForm((f) => ({
           ...f,
           fuelTypeId: String(first.id),
@@ -181,26 +185,28 @@ export default function MeterPage() {
 
     setClosingId(id);
 
-    const res = await fetch(`/api/meter-periods/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ meterEnd: end }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert(data.error ?? "บันทึกไม่สำเร็จ");
-    } else {
-      setCloseEnd((c) => {
-        const n = { ...c };
-        delete n[id];
-        return n;
+    try {
+      const res = await fetch(`/api/meter-periods/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meterEnd: end }),
       });
-      load();
-    }
 
-    setClosingId(null);
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error ?? "บันทึกไม่สำเร็จ");
+      } else {
+        setCloseEnd((c) => {
+          const n = { ...c };
+          delete n[id];
+          return n;
+        });
+        load();
+      }
+    } finally {
+      setClosingId(null);
+    }
   }
 
   async function deletePeriod(id: number) {
@@ -273,6 +279,9 @@ export default function MeterPage() {
     );
   }, [periods, allSales]);
 
+  const openGroups = dayGroups.filter((g) => g.hasOpen);
+  const historyGroups = dayGroups.filter((g) => !g.hasOpen);
+
   const openPeriods = periods.filter((p) => p.meterEnd == null).length;
   const closedToday = periods.filter(
     (p) =>
@@ -280,84 +289,380 @@ export default function MeterPage() {
       new Date(p.date).toDateString() === new Date().toDateString()
   ).length;
 
-  const liters = Number(form.meterEnd || 0) - Number(form.meterStart || 0);
-  const revenue =
-    liters > 0 && Number(form.pricePerLiter) > 0
-      ? liters * Number(form.pricePerLiter)
+  const previewLiters =
+    Number(form.meterEnd || 0) - Number(form.meterStart || 0);
+
+  const previewRevenue =
+    previewLiters > 0 && Number(form.pricePerLiter) > 0
+      ? previewLiters * Number(form.pricePerLiter)
       : 0;
 
   return (
-    <main className="min-h-screen bg-[#F6F8FC] text-slate-900">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
-        <div className="max-w-3xl mx-auto h-16 px-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+    <main className="min-h-screen bg-[#eef4fb] text-slate-900">
+      <div className="mx-auto min-h-screen w-full max-w-[480px] bg-[#f8fbff] shadow-[0_0_45px_rgba(15,23,42,0.08)] md:my-5 md:min-h-[calc(100vh-40px)] md:rounded-[34px] md:overflow-hidden">
+        {/* APP HEADER */}
+        <header className="bg-white px-5 pt-5 pb-4">
+          <div className="flex items-center justify-between">
             <button
               onClick={() => router.push("/dashboard")}
-              className="h-10 w-10 rounded-xl flex items-center justify-center text-xl text-slate-700 hover:bg-slate-100"
-              aria-label="กลับ"
+              className="flex items-center gap-2"
             >
-              ←
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl text-white shadow-lg shadow-blue-600/20">
+                💧
+              </div>
+
+              <div className="text-left">
+                <div className="text-[20px] font-black leading-none">
+                  Fuel<span className="text-blue-600">POS</span>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">
+                  ระบบจัดการสถานีน้ำมัน
+                </div>
+              </div>
             </button>
 
-            <div>
-              <h1 className="font-extrabold text-base">มิเตอร์รอบ</h1>
-              <p className="text-[11px] text-slate-400">
-                เปิดรอบ • ปิดรอบ • เทียบยอดขาย
-              </p>
+            <div className="flex items-center gap-2">
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-lg">
+                🔔
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold">
+                📅 {displayDate()}
+              </div>
             </div>
           </div>
+        </header>
 
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-bold shadow-sm hover:bg-blue-700"
-          >
-            {showForm ? "ปิดฟอร์ม" : "+ บันทึกรอบ"}
-          </button>
-        </div>
-      </header>
+        {/* PAGE TITLE */}
+        <section className="px-5 pt-4">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-sm text-slate-500">จัดการรอบการขาย</p>
+              <h1 className="mt-1 text-[32px] font-black tracking-tight">
+                มิเตอร์
+              </h1>
+              <p className="mt-1 text-sm text-slate-400">
+                เปิดรอบ ปิดรอบ และตรวจสอบยอดขาย
+              </p>
+            </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-5 space-y-5">
-        {/* Summary */}
-        <section className="grid grid-cols-3 gap-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">รอบที่เปิดอยู่</p>
-            <p className="mt-1 text-2xl font-black tabular-nums">
-              {openPeriods}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">ปิดรอบวันนี้</p>
-            <p className="mt-1 text-2xl font-black tabular-nums">
-              {closedToday}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">ชนิดน้ำมัน</p>
-            <p className="mt-1 text-2xl font-black tabular-nums">
-              {fuelTypes.length}
-            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="mb-1 h-11 rounded-2xl bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20"
+            >
+              + เปิดรอบ
+            </button>
           </div>
         </section>
 
-        {/* Form */}
-        {showForm && (
-          <section className="rounded-[24px] border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100">
-              <h2 className="font-extrabold">บันทึกมิเตอร์รอบใหม่</h2>
-              <p className="text-xs text-slate-400 mt-1">
-                เริ่มรอบก่อน แล้วกรอกมิเตอร์สิ้นรอบภายหลังได้
+        {/* SUMMARY */}
+        <section className="grid grid-cols-2 gap-3 px-5 pt-5">
+          <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-400">รอบที่เปิดอยู่</p>
+            <div className="mt-1 flex items-end justify-between">
+              <p className="text-[28px] font-black tabular-nums">{openPeriods}</p>
+              <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600">
+                กำลังใช้งาน
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-400">ปิดรอบวันนี้</p>
+            <div className="mt-1 flex items-end justify-between">
+              <p className="text-[28px] font-black tabular-nums">{closedToday}</p>
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-600">
+                วันนี้
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* OPEN PERIODS */}
+        <section className="px-5 pt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-black">รอบที่กำลังใช้งาน</h2>
+            <span className="text-xs text-slate-400">
+              {openGroups.length} รายการ
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="rounded-[24px] bg-white p-8 text-center text-sm text-slate-400">
+              กำลังโหลด...
+            </div>
+          ) : openGroups.length === 0 ? (
+            <div className="rounded-[24px] border border-slate-200 bg-white p-7 text-center shadow-sm">
+              <div className="text-3xl">📟</div>
+              <p className="mt-2 font-bold">ยังไม่มีรอบเปิดอยู่</p>
+              <p className="mt-1 text-xs text-slate-400">
+                กด “+ เปิดรอบ” เพื่อเริ่มรอบใหม่
               </p>
             </div>
+          ) : (
+            <div className="space-y-4">
+              {openGroups.map((g) => (
+                <div
+                  key={g.key}
+                  className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm"
+                >
+                  <div className="flex items-center gap-3 px-5 pt-5">
+                    <div
+                      className={`h-12 w-12 rounded-2xl flex items-center justify-center text-xl ${
+                        FUEL_ICON_BG[g.fuelName] ?? "bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      ⛽
+                    </div>
 
-            <form onSubmit={handleSubmit} className="p-5 space-y-5">
-              <div>
-                <p className="text-xs font-bold text-slate-500 mb-2">
-                  ชนิดน้ำมัน
-                </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${
+                            FUEL_COLOR[g.fuelName] ?? "bg-slate-400"
+                          }`}
+                        />
+                        <h3 className="font-black">{g.fuelLabel}</h3>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {shortDate(g.periods[0].date)}
+                      </p>
+                    </div>
 
+                    <span className="rounded-full bg-orange-50 px-3 py-1 text-[11px] font-bold text-orange-600">
+                      ● กำลังใช้งาน
+                    </span>
+                  </div>
+
+                  <div className="px-5 pb-5 pt-4">
+                    {g.periods.map((p) => (
+                      <div key={p.id}>
+                        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4">
+                          <div>
+                            <p className="text-[11px] text-slate-400">
+                              มิเตอร์เริ่ม
+                            </p>
+                            <p className="mt-1 text-xl font-black tabular-nums">
+                              {fmt(p.meterStart)}
+                            </p>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="text-[11px] text-slate-400">
+                              ราคาในรอบ
+                            </p>
+                            <p className="mt-1 text-base font-bold tabular-nums">
+                              {fmtDec(p.pricePerLiter)} ฿/L
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-2xl bg-orange-50 p-3">
+                          <p className="mb-2 text-xs font-bold text-orange-700">
+                            ปิดรอบนี้
+                          </p>
+
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              value={closeEnd[p.id] ?? ""}
+                              onChange={(e) =>
+                                setCloseEnd((c) => ({
+                                  ...c,
+                                  [p.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="ใส่มิเตอร์สิ้นรอบ"
+                              className="min-w-0 flex-1 rounded-xl border border-orange-200 bg-white px-4 py-3 text-base font-bold tabular-nums outline-none focus:border-orange-400"
+                            />
+
+                            <button
+                              onClick={() => closePeriod(p.id)}
+                              disabled={!closeEnd[p.id] || closingId === p.id}
+                              className="rounded-xl bg-orange-500 px-4 font-bold text-white disabled:opacity-40"
+                            >
+                              {closingId === p.id ? "..." : "ปิดรอบ"}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 text-right">
+                          <button
+                            onClick={() => deletePeriod(p.id)}
+                            disabled={deletingId === p.id}
+                            className="text-xs font-semibold text-red-400"
+                          >
+                            {deletingId === p.id ? "กำลังลบ..." : "ลบรอบ"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* HISTORY */}
+        <section className="px-5 pt-7 pb-28">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-black">ประวัติล่าสุด</h2>
+            <span className="text-xs text-blue-600">ดูทั้งหมด →</span>
+          </div>
+
+          <div className="space-y-4">
+            {historyGroups.slice(0, 5).map((g) => {
+              const diffLiters = g.saleLiters - g.meterLiters;
+              const diffAmount = g.saleAmount - g.meterRevenue;
+              const ok = Math.abs(diffLiters) < 2;
+
+              return (
+                <div
+                  key={g.key}
+                  className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-sm"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`h-11 w-11 rounded-2xl flex items-center justify-center ${
+                        FUEL_ICON_BG[g.fuelName] ?? "bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      ⛽
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-black">{g.fuelLabel}</h3>
+                      <p className="text-xs text-slate-400">
+                        {shortDate(g.periods[0].date)}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                        ok
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-red-50 text-red-600"
+                      }`}
+                    >
+                      {ok ? "ยอดตรงกัน" : "มียอดต่าง"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-2xl bg-blue-50 p-3 text-center">
+                      <p className="text-[10px] text-blue-400">มิเตอร์</p>
+                      <p className="mt-1 text-base font-black text-blue-700 tabular-nums">
+                        {fmtDec(g.meterLiters)} L
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                      <p className="text-[10px] text-slate-400">บันทึกขาย</p>
+                      <p className="mt-1 text-base font-black text-slate-700 tabular-nums">
+                        {fmtDec(g.saleLiters)} L
+                      </p>
+                    </div>
+
+                    <div
+                      className={`rounded-2xl p-3 text-center ${
+                        ok ? "bg-emerald-50" : "bg-red-50"
+                      }`}
+                    >
+                      <p
+                        className={`text-[10px] ${
+                          ok ? "text-emerald-500" : "text-red-500"
+                        }`}
+                      >
+                        ส่วนต่าง
+                      </p>
+                      <p
+                        className={`mt-1 text-base font-black tabular-nums ${
+                          ok ? "text-emerald-700" : "text-red-700"
+                        }`}
+                      >
+                        {diffLiters >= 0 ? "+" : ""}
+                        {fmtDec(diffLiters)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex justify-between text-xs text-slate-400">
+                    <span>มิเตอร์ {fmt(g.meterRevenue)} ฿</span>
+                    <span>ขาย {fmt(g.saleAmount)} ฿</span>
+                    <span>
+                      ต่าง {diffAmount >= 0 ? "+" : ""}
+                      {fmt(diffAmount)} ฿
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* BOTTOM NAV */}
+        <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[480px] border-t border-slate-200 bg-white/95 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:bottom-5 md:rounded-b-[34px]">
+          <div className="grid grid-cols-5">
+            <NavButton
+              label="หน้าหลัก"
+              icon="⌂"
+              active={pathname === "/dashboard"}
+              onClick={() => router.push("/dashboard")}
+            />
+            <NavButton
+              label="ขาย"
+              icon="⛽"
+              active={pathname.startsWith("/sales") || pathname === "/quick"}
+              onClick={() => router.push("/sales/new")}
+            />
+            <NavButton
+              label="สต็อก"
+              icon="◇"
+              active={pathname.startsWith("/stock")}
+              onClick={() => router.push("/stock")}
+            />
+            <NavButton
+              label="มิเตอร์"
+              icon="▥"
+              active={pathname.startsWith("/meter")}
+              onClick={() => router.push("/meter")}
+            />
+            <NavButton
+              label="รายงาน"
+              icon="▮"
+              active={pathname.startsWith("/report")}
+              onClick={() => router.push("/reports")}
+            />
+          </div>
+        </nav>
+
+        {/* OPEN ROUND BOTTOM SHEET */}
+        {showForm && (
+          <div className="fixed inset-0 z-[70] bg-slate-950/35 px-3 flex items-end justify-center">
+            <div className="w-full max-w-[480px] rounded-t-[30px] bg-white p-5 shadow-2xl">
+              <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-xl font-black">เปิดรอบมิเตอร์</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    เลือกน้ำมันและใส่มิเตอร์เริ่มรอบ
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="h-9 w-9 rounded-full bg-slate-100 text-slate-500"
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="mt-5 space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   {fuelTypes.map((ft) => {
                     const active = form.fuelTypeId === String(ft.id);
@@ -367,38 +672,25 @@ export default function MeterPage() {
                         key={ft.id}
                         type="button"
                         onClick={() => selectFuel(ft)}
-                        className={`rounded-2xl border p-4 text-left transition ${
+                        className={`rounded-2xl border p-4 text-left ${
                           active
                             ? "border-blue-600 bg-blue-50 text-blue-700"
                             : "border-slate-200 bg-white text-slate-700"
                         }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-extrabold">{ft.label}</span>
-                          {active && (
-                            <span className="h-6 w-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center">
-                              ✓
-                            </span>
-                          )}
+                        <div className="font-black">{ft.label}</div>
+                        <div className="mt-1 text-xs opacity-70">
+                          {fmtDec(ft.currentPrice)} บาท/L
                         </div>
-
-                        <p className="mt-2 text-xs opacity-70 tabular-nums">
-                          {ft.currentPrice > 0
-                            ? `${fmtDec(ft.currentPrice)} บาท/L`
-                            : "ยังไม่ตั้งราคา"}
-                        </p>
                       </button>
                     );
                   })}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <label>
-                  <span className="block text-xs font-bold text-slate-500 mb-2">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold text-slate-500">
                     มิเตอร์เริ่มรอบ
                   </span>
-
                   <input
                     type="number"
                     inputMode="decimal"
@@ -409,358 +701,81 @@ export default function MeterPage() {
                     }
                     placeholder="0.00"
                     required
-                    className="w-full h-14 rounded-2xl border border-slate-200 px-4 text-lg font-bold tabular-nums outline-none focus:border-blue-500"
+                    className="h-14 w-full rounded-2xl border border-slate-200 px-4 text-xl font-black tabular-nums outline-none focus:border-blue-500"
                   />
                 </label>
 
-                <label>
-                  <span className="block text-xs font-bold text-slate-500 mb-2">
-                    มิเตอร์สิ้นรอบ
-                    <span className="font-normal text-slate-300">
-                      {" "}
-                      (ใส่ทีหลังได้)
-                    </span>
-                  </span>
+                <details>
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-500">
+                    ตัวเลือกเพิ่มเติม
+                  </summary>
 
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    value={form.meterEnd}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, meterEnd: e.target.value }))
-                    }
-                    placeholder="ว่างไว้ก่อน"
-                    className="w-full h-14 rounded-2xl border border-slate-200 px-4 text-lg font-bold tabular-nums outline-none focus:border-blue-500"
-                  />
-                </label>
-              </div>
+                  <div className="mt-3 space-y-3">
+                    <input
+                      type="date"
+                      value={form.date}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, date: e.target.value }))
+                      }
+                      className="h-12 w-full rounded-2xl border border-slate-200 px-4"
+                    />
 
-              {liters > 0 && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl bg-blue-50 p-4">
-                    <p className="text-xs text-blue-400">ลิตรจากมิเตอร์</p>
-                    <p className="mt-1 text-2xl font-black text-blue-700 tabular-nums">
-                      {fmtDec(liters)} L
-                    </p>
+                    <input
+                      type="text"
+                      value={form.note}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, note: e.target.value }))
+                      }
+                      placeholder="หมายเหตุ (ไม่บังคับ)"
+                      className="h-12 w-full rounded-2xl border border-slate-200 px-4"
+                    />
                   </div>
+                </details>
 
-                  <div className="rounded-2xl bg-emerald-50 p-4">
-                    <p className="text-xs text-emerald-500">รายได้จากมิเตอร์</p>
-                    <p className="mt-1 text-2xl font-black text-emerald-700 tabular-nums">
-                      {revenue > 0 ? `${fmt(revenue)} ฿` : "—"}
-                    </p>
+                {error && (
+                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {error}
                   </div>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <label>
-                  <span className="block text-xs font-bold text-slate-500 mb-2">
-                    ราคา/ลิตรในรอบนี้
-                  </span>
-
-                  <input
-                    type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={form.pricePerLiter}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        pricePerLiter: e.target.value,
-                      }))
-                    }
-                    placeholder="0.00"
-                    required
-                    className="w-full h-12 rounded-2xl border border-slate-200 px-4 font-bold tabular-nums outline-none focus:border-blue-500"
-                  />
-                </label>
-
-                <label>
-                  <span className="block text-xs font-bold text-slate-500 mb-2">
-                    วันที่
-                  </span>
-
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, date: e.target.value }))
-                    }
-                    className="w-full h-12 rounded-2xl border border-slate-200 px-4 outline-none focus:border-blue-500"
-                  />
-                </label>
-              </div>
-
-              <input
-                type="text"
-                value={form.note}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, note: e.target.value }))
-                }
-                placeholder="หมายเหตุ (ไม่บังคับ)"
-                className="w-full h-12 rounded-2xl border border-slate-200 px-4 text-sm outline-none focus:border-blue-500"
-              />
-
-              {error && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="h-12 rounded-2xl border border-slate-200 bg-white font-bold text-slate-500"
-                >
-                  ยกเลิก
-                </button>
+                )}
 
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="h-12 rounded-2xl bg-blue-600 font-bold text-white disabled:opacity-50"
+                  disabled={submitting || !form.meterStart}
+                  className="h-14 w-full rounded-2xl bg-blue-600 text-base font-black text-white shadow-lg shadow-blue-600/20 disabled:bg-slate-200 disabled:text-slate-400"
                 >
-                  {submitting ? "กำลังบันทึก..." : "บันทึกรอบ"}
+                  {submitting ? "กำลังบันทึก..." : "เปิดรอบมิเตอร์"}
                 </button>
-              </div>
-            </form>
-          </section>
-        )}
-
-        {/* List */}
-        {loading ? (
-          <div className="py-20 text-center text-slate-300">กำลังโหลด...</div>
-        ) : periods.length === 0 ? (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-10 text-center">
-            <div className="text-4xl">📟</div>
-            <p className="mt-3 font-bold">ยังไม่มีรอบมิเตอร์</p>
-            <p className="mt-1 text-sm text-slate-400">
-              กด “บันทึกรอบ” เพื่อเริ่มใช้งาน
-            </p>
+              </form>
+            </div>
           </div>
-        ) : (
-          <section className="space-y-4">
-            {dayGroups.map((g) => {
-              const diffLiters = g.saleLiters - g.meterLiters;
-              const diffAmount = g.saleAmount - g.meterRevenue;
-              const ok = Math.abs(diffLiters) < 2;
-
-              return (
-                <article
-                  key={g.key}
-                  className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm"
-                >
-                  {/* Header */}
-                  <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-                    <div
-                      className={`h-3 w-3 rounded-full ${
-                        FUEL_COLOR[g.fuelName] ?? "bg-slate-400"
-                      }`}
-                    />
-
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-extrabold">{g.fuelLabel}</h3>
-                        <span className="text-xs text-slate-400">
-                          {shortDate(g.periods[0].date)}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {g.periods.length} รอบ
-                      </p>
-                    </div>
-
-                    {g.hasOpen && (
-                      <span className="ml-auto rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-600">
-                        มีรอบเปิดอยู่
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Periods */}
-                  <div className="divide-y divide-slate-100">
-                    {g.periods.map((p) => {
-                      const isOpen = p.meterEnd == null;
-
-                      return (
-                        <div key={p.id} className="p-5">
-                          <div className="flex items-start gap-3">
-                            <div
-                              className={`mt-1 h-10 w-10 shrink-0 rounded-xl border flex items-center justify-center text-sm font-black ${
-                                FUEL_SOFT[g.fuelName] ??
-                                "bg-slate-50 text-slate-600 border-slate-100"
-                              }`}
-                            >
-                              ⛽
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-xs text-slate-400">
-                                    ราคา {fmtDec(p.pricePerLiter)} บาท/L
-                                  </p>
-
-                                  <p className="mt-1 text-sm font-bold tabular-nums">
-                                    {fmt(p.meterStart)}
-                                    <span className="mx-2 text-slate-300">→</span>
-                                    {isOpen ? (
-                                      <span className="text-orange-500">
-                                        ยังไม่จบ
-                                      </span>
-                                    ) : (
-                                      <>
-                                        {fmt(p.meterEnd ?? 0)}
-                                        <span className="ml-2 text-blue-600">
-                                          ({fmtDec(p.liters ?? 0)} L)
-                                        </span>
-                                      </>
-                                    )}
-                                  </p>
-                                </div>
-
-                                <button
-                                  onClick={() => deletePeriod(p.id)}
-                                  disabled={deletingId === p.id}
-                                  className="text-xs font-semibold text-red-400 hover:text-red-600"
-                                >
-                                  {deletingId === p.id ? "..." : "ลบ"}
-                                </button>
-                              </div>
-
-                              {p.note && (
-                                <p className="mt-2 text-xs text-slate-400">
-                                  {p.note}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {isOpen && (
-                            <div className="mt-4 rounded-2xl bg-orange-50 p-3">
-                              <p className="mb-2 text-xs font-bold text-orange-700">
-                                ปิดรอบนี้
-                              </p>
-
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  inputMode="decimal"
-                                  step="0.01"
-                                  value={closeEnd[p.id] ?? ""}
-                                  onChange={(e) =>
-                                    setCloseEnd((c) => ({
-                                      ...c,
-                                      [p.id]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="ใส่มิเตอร์สิ้นรอบ"
-                                  className="min-w-0 flex-1 h-12 rounded-xl border border-orange-200 bg-white px-4 font-bold tabular-nums outline-none focus:border-orange-400"
-                                />
-
-                                <button
-                                  onClick={() => closePeriod(p.id)}
-                                  disabled={!closeEnd[p.id] || closingId === p.id}
-                                  className="h-12 px-5 rounded-xl bg-orange-500 text-white text-sm font-bold disabled:opacity-40"
-                                >
-                                  {closingId === p.id ? "..." : "ปิดรอบ"}
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Summary */}
-                  {!g.hasOpen && (
-                    <div className="border-t border-slate-100 p-5">
-                      <div className="mb-3 flex items-center justify-between">
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                          เทียบรวมทั้งวัน
-                        </p>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${
-                            ok
-                              ? "bg-emerald-50 text-emerald-600"
-                              : "bg-red-50 text-red-600"
-                          }`}
-                        >
-                          {ok ? "ยอดตรงกัน" : "มียอดต่าง"}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="rounded-2xl bg-blue-50 p-3 text-center">
-                          <p className="text-[11px] text-blue-400">
-                            มิเตอร์รวม
-                          </p>
-                          <p className="mt-1 text-lg font-black text-blue-700 tabular-nums">
-                            {fmtDec(g.meterLiters)} L
-                          </p>
-                          <p className="text-xs font-semibold text-blue-500">
-                            {fmt(g.meterRevenue)} ฿
-                          </p>
-                        </div>
-
-                        <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                          <p className="text-[11px] text-slate-400">
-                            บันทึกขาย
-                          </p>
-                          <p className="mt-1 text-lg font-black text-slate-700 tabular-nums">
-                            {fmtDec(g.saleLiters)} L
-                          </p>
-                          <p className="text-xs font-semibold text-slate-500">
-                            {fmt(g.saleAmount)} ฿
-                          </p>
-                        </div>
-
-                        <div
-                          className={`rounded-2xl p-3 text-center ${
-                            ok ? "bg-emerald-50" : "bg-red-50"
-                          }`}
-                        >
-                          <p
-                            className={`text-[11px] ${
-                              ok ? "text-emerald-500" : "text-red-500"
-                            }`}
-                          >
-                            ส่วนต่าง
-                          </p>
-
-                          <p
-                            className={`mt-1 text-lg font-black tabular-nums ${
-                              ok ? "text-emerald-700" : "text-red-700"
-                            }`}
-                          >
-                            {diffLiters >= 0 ? "+" : ""}
-                            {fmtDec(diffLiters)} L
-                          </p>
-
-                          <p
-                            className={`text-xs font-semibold ${
-                              ok ? "text-emerald-600" : "text-red-600"
-                            }`}
-                          >
-                            {diffAmount >= 0 ? "+" : ""}
-                            {fmt(diffAmount)} ฿
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </section>
         )}
       </div>
     </main>
+  );
+}
+
+function NavButton({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex min-h-[58px] flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold ${
+        active ? "text-blue-600" : "text-slate-400"
+      }`}
+    >
+      <span className={`text-[22px] leading-none ${active ? "scale-110" : ""}`}>
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
   );
 }

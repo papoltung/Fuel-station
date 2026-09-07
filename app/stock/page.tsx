@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type StockItem = { id: number; fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type Purchase = { id: number; date: string; fuelTypeId: number; liters: number; costPerLiter: number; totalCost: number; invoiceNo: string | null; supplier: string | null; isPaid: boolean; paidNote: string | null; fuelType: { label: string; currentPrice: number } };
@@ -45,6 +45,7 @@ function shortDate(s: string) {
 
 export default function StockPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -199,626 +200,507 @@ export default function StockPage() {
   const lowProductAlerts = products.filter((p) => p.isActive && p.currentStock <= p.minStock);
 
   return (
-    <>
-    <div className="min-h-screen bg-slate-100">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/dashboard")} className="text-gray-500 text-xl w-8">←</button>
-          <h1 className="text-base font-bold text-gray-900">สต๊อกน้ำมัน</h1>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push("/stock/check")}
-            className="border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50"
-          >
-            วัดถัง
-          </button>
+    <main className="min-h-screen bg-[#eef4fb] text-slate-900">
+      <div className="mx-auto min-h-screen w-full max-w-[480px] bg-[#f8fbff] shadow-[0_0_45px_rgba(15,23,42,0.08)] md:my-5 md:min-h-[calc(100vh-40px)] md:rounded-[34px] md:overflow-hidden">
+        {/* APP HEADER */}
+        <header className="bg-white px-5 pt-5 pb-4">
+          <div className="flex items-center justify-between">
+            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-xl text-white shadow-lg shadow-blue-600/20">
+                💧
+              </div>
+              <div className="text-left">
+                <div className="text-[20px] font-black leading-none">
+                  Fuel<span className="text-blue-600">POS</span>
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">ระบบจัดการสถานีน้ำมัน</div>
+              </div>
+            </button>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-lg">
+                🔔
+                {(lowAlerts.length > 0 || lowProductAlerts.length > 0) && (
+                  <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                )}
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold">
+                📅 {new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* TITLE */}
+        <section className="px-5 pt-4">
+          <p className="text-sm text-slate-500">จัดการคลังสินค้า</p>
+          <h1 className="mt-1 text-[32px] font-black tracking-tight">สต็อก</h1>
+          <p className="mt-1 text-sm text-slate-400">น้ำมัน สินค้า รับเข้า วัดถัง และยอดค้างจ่าย</p>
+        </section>
+
+        {/* HERO */}
+        <section className="px-5 pt-5">
+          <div className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-blue-600 to-blue-700 p-5 text-white shadow-xl shadow-blue-600/20">
+            <div className="absolute -right-8 -top-8 h-36 w-36 rounded-full bg-white/10" />
+            <div className="absolute -bottom-12 right-8 h-40 w-40 rounded-full bg-white/5" />
+
+            <div className="relative">
+              <p className="text-sm font-medium text-blue-100">น้ำมันคงเหลือรวม</p>
+              <p className="mt-1 text-[38px] font-black tabular-nums">
+                {fmt(totalLiters)}
+                <span className="ml-2 text-lg font-semibold text-blue-100">L</span>
+              </p>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {stocks.slice(0, 4).map((s) => (
+                  <div key={s.id} className="rounded-2xl bg-white/10 px-3 py-2 backdrop-blur">
+                    <p className="text-[11px] text-blue-100">{s.fuelType.label}</p>
+                    <p className="mt-0.5 font-black tabular-nums">{fmt(s.currentLiters)} L</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* QUICK ACTIONS */}
+        <section className="grid grid-cols-3 gap-3 px-5 pt-4">
           <button
             onClick={() => router.push("/purchases/new")}
-            className="bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-600"
+            className="rounded-[22px] bg-blue-600 px-3 py-4 text-white shadow-lg shadow-blue-600/15"
           >
-            + รับน้ำมันเข้า
+            <div className="text-2xl">＋</div>
+            <div className="mt-1 text-sm font-bold">รับน้ำมัน</div>
           </button>
-        </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto p-4 space-y-4">
+          <button
+            onClick={() => router.push("/stock/check")}
+            className="rounded-[22px] border border-slate-200 bg-white px-3 py-4 text-slate-700 shadow-sm"
+          >
+            <div className="text-2xl">◫</div>
+            <div className="mt-1 text-sm font-bold">วัดถัง</div>
+          </button>
+
+          <button
+            onClick={() => router.push("/settings/products")}
+            className="rounded-[22px] border border-slate-200 bg-white px-3 py-4 text-slate-700 shadow-sm"
+          >
+            <div className="text-2xl">◇</div>
+            <div className="mt-1 text-sm font-bold">สินค้า</div>
+          </button>
+        </section>
+
         {loading ? (
-          <div className="text-center py-20 text-gray-300 text-4xl animate-pulse">...</div>
+          <div className="px-5 py-16 text-center text-slate-400">กำลังโหลด...</div>
         ) : (
           <>
-            {/* Alerts */}
+            {/* ALERTS */}
             {(lowAlerts.length > 0 || lowProductAlerts.length > 0) && (
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-1">
-                {lowAlerts.map((s) => (
-                  <p key={s.id} className="text-red-700 text-sm font-semibold">
-                    ⚠ {s.fuelType.label} เหลือน้อย — {fmt(s.currentLiters)} ลิตร
-                  </p>
-                ))}
-                {lowProductAlerts.map((p) => (
-                  <p key={p.id} className="text-red-700 text-sm font-semibold">
-                    ⚠ {p.name} เหลือน้อย — {p.currentStock} {p.unit}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            {/* Hero */}
-            <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-6 text-white shadow-lg">
-              <p className="text-amber-100 text-sm font-medium">น้ำมันคงเหลือรวม</p>
-              <p className="text-4xl font-bold mt-1">
-                {fmt(totalLiters)}
-                <span className="text-xl font-normal text-amber-200 ml-1">ลิตร</span>
-              </p>
-              <div className="flex gap-4 mt-4 pt-4 border-t border-amber-400/50 flex-wrap">
-                {stocks.map((s) => (
-                  <div key={s.id}>
-                    <p className="text-amber-200 text-xs">{s.fuelType.label}</p>
-                    <p className="font-bold">{fmt(s.currentLiters)} L</p>
+              <section className="px-5 pt-5">
+                <div className="rounded-[22px] border border-red-100 bg-red-50 p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span>⚠️</span>
+                    <h2 className="text-sm font-black text-red-700">แจ้งเตือนสต็อกต่ำ</h2>
                   </div>
-                ))}
-                {stocks.length === 0 && (
-                  <p className="text-amber-200 text-sm">ยังไม่มีข้อมูลสต๊อก — รับน้ำมันเข้าก่อน</p>
-                )}
-              </div>
-            </div>
-
-            {/* ค้างจ่าย */}
-            <div className="bg-red-50 border border-red-200 rounded-2xl overflow-hidden">
-              <div className="p-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="text-xs font-bold text-red-600 uppercase tracking-wide">ค้างจ่ายทั้งหมด</p>
-                    <p className="text-2xl font-bold text-red-700 mt-0.5">
-                      {fmt(totalUnpaid)}<span className="text-sm font-normal text-red-400 ml-1">บาท</span>
-                    </p>
-                  </div>
-                  <button onClick={() => setShowDebtForm((v) => !v)}
-                    className="bg-red-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-red-700">
-                    + บันทึกค้างจ่าย
-                  </button>
-                </div>
-
-                {/* form เพิ่มค้างจ่าย */}
-                {showDebtForm && (
-                  <form onSubmit={saveDebt} className="mt-3 bg-white rounded-xl p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="text-xs text-gray-400 mb-1">ผู้ส่ง</p>
-                        <input type="text" value={debtForm.supplier} required
-                          onChange={(e) => setDebtForm((f) => ({ ...f, supplier: e.target.value }))}
-                          placeholder="บริษัทน้ำมัน"
-                          className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 mb-1">ยอดรวม (บาท)</p>
-                        <input type="number" inputMode="decimal" step="0.01" value={debtForm.amount} required
-                          onChange={(e) => setDebtForm((f) => ({ ...f, amount: e.target.value }))}
-                          placeholder="0.00"
-                          className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-red-400" />
-                      </div>
-                    </div>
-                    <input type="text" value={debtForm.note}
-                      onChange={(e) => setDebtForm((f) => ({ ...f, note: e.target.value }))}
-                      placeholder="หมายเหตุ เช่น ดีเซล 3000L + เบนซิน 2000L"
-                      className="w-full border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="date" value={debtForm.date}
-                        onChange={(e) => setDebtForm((f) => ({ ...f, date: e.target.value }))}
-                        className="border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-red-400" />
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setShowDebtForm(false)}
-                          className="flex-1 border-2 border-gray-200 text-gray-500 rounded-xl text-sm font-semibold">
-                          ยกเลิก
-                        </button>
-                        <button type="submit" disabled={savingDebt}
-                          className="flex-1 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 disabled:opacity-50">
-                          {savingDebt ? "..." : "บันทึก"}
-                        </button>
-                      </div>
-                    </div>
-                  </form>
-                )}
-              </div>
-
-              {/* รายการค้าง: SupplierDebt */}
-              {unpaidDebts.length > 0 && (
-                <div className="border-t border-red-100 divide-y divide-red-50">
-                  {unpaidDebts.map((d) => (
-                    <div key={d.id} className="bg-white">
-                      <div className="px-4 py-3 flex justify-between items-center">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">{d.supplier}</p>
-                          <p className="text-xs text-gray-400">
-                            {shortDate(d.date)}{d.note ? ` · ${d.note}` : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-bold text-red-600">{fmt(d.amount)} ฿</p>
-                          <button
-                            onClick={() => { setPartialId(partialId === d.id ? null : d.id); setPartialAmount(""); }}
-                            className="text-xs bg-orange-100 text-orange-600 px-2.5 py-1 rounded-lg hover:bg-orange-200">
-                            บางส่วน
-                          </button>
-                          <button onClick={() => markDebtPaid(d.id)} disabled={markingDebtId === d.id}
-                            className="text-xs bg-green-500 text-white px-2.5 py-1 rounded-lg hover:bg-green-600 disabled:opacity-40">
-                            {markingDebtId === d.id ? "..." : "เต็ม"}
-                          </button>
-                          <button onClick={() => deleteDebt(d.id)} disabled={deletingDebtId === d.id}
-                            className="text-xs text-red-400 hover:text-red-600 px-1.5 py-1 rounded-lg hover:bg-red-50 disabled:opacity-40">
-                            {deletingDebtId === d.id ? "..." : "ลบ"}
-                          </button>
-                        </div>
-                      </div>
-                      {/* ประวัติการจ่าย */}
-                      {d.payments.length > 0 && (
-                        <div className="px-4 pb-2 space-y-1">
-                          {d.payments.map((pay) => (
-                            <div key={pay.id} className="flex justify-between items-center text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-1.5">
-                              <span>{shortDate(pay.paidAt)}{pay.note ? ` · ${pay.note}` : ""}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-green-600">−{fmt(pay.amount)} ฿</span>
-                                <button
-                                  onClick={() => deletePayment(d.id, pay.id)}
-                                  disabled={deletingPaymentId === pay.id}
-                                  className="text-red-300 hover:text-red-500 disabled:opacity-40 px-1"
-                                >
-                                  {deletingPaymentId === pay.id ? "..." : "✕"}
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {partialId === d.id && (
-                        <div className="px-4 pb-3 flex gap-2 items-center">
-                          <input type="number" inputMode="decimal" value={partialAmount}
-                            onChange={(e) => setPartialAmount(e.target.value)}
-                            placeholder={`จ่ายเท่าไหร่? (ค้าง ${fmt(d.amount)} ฿)`}
-                            className="flex-1 border-2 border-orange-200 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-orange-400" />
-                          <button onClick={() => payPartial(d.id)} disabled={!partialAmount || markingDebtId === d.id}
-                            className="bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-orange-600 disabled:opacity-40">
-                            {markingDebtId === d.id ? "..." : "หัก"}
-                          </button>
-                          <button onClick={() => { setPartialId(null); setPartialAmount(""); }}
-                            className="text-gray-400 text-sm px-2">ยกเลิก</button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* รายการค้าง: FuelPurchase isPaid=false */}
-              {unpaidPurchases.length > 0 && (
-                <div className="border-t border-red-100 divide-y divide-red-50">
-                  {unpaidPurchases.map((p) => (
-                    <div key={p.id} className="px-4 py-3 flex justify-between items-center bg-white">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">{p.fuelType.label}{p.supplier ? ` · ${p.supplier}` : ""}</p>
-                        <p className="text-xs text-gray-400">
-                          {shortDate(p.date)}{p.paidNote ? ` · ${p.paidNote}` : ""}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-red-600">{fmt(p.totalCost)} ฿</p>
-                        <button onClick={() => markPaid(p.id)} disabled={markingPaidId === p.id}
-                          className="text-xs bg-green-500 text-white px-2.5 py-1 rounded-lg hover:bg-green-600 disabled:opacity-40">
-                          {markingPaidId === p.id ? "..." : "จ่ายแล้ว"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {totalUnpaid === 0 && (
-                <p className="text-center text-red-300 text-xs py-3">ไม่มียอดค้างจ่าย</p>
-              )}
-            </div>
-
-            {/* Stock per fuel */}
-            <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
-              <p className="text-sm font-bold text-gray-700">คงเหลือแยกชนิด</p>
-              {stocks.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">ยังไม่มีข้อมูล</p>
-              ) : (
-                stocks.map((s) => {
-                  const cmp = compares.find((c) => c.fuelTypeId === s.fuelTypeId);
-                  const meterL = cmp ? Math.max(0, cmp.stockByMeter) : null;
-                  const maxL = Math.max(...stocks.map((x) => x.currentLiters), meterL ?? 0, 1);
-                  const pctSystem = Math.max(0, (s.currentLiters / maxL) * 100);
-                  const pctMeter = meterL !== null ? Math.max(0, (meterL / maxL) * 100) : null;
-                  const isLow = s.currentLiters < LOW_THRESHOLD;
-                  return (
-                    <div key={s.id}>
-                      <div className="flex justify-between items-baseline mb-1">
-                        <span className="text-sm font-semibold text-gray-700">{s.fuelType.label}</span>
-                        <div className="flex items-baseline gap-3">
-                          <span className="text-xs text-gray-400">
-                            ระบบ <span className={`font-bold ${isLow ? "text-red-600" : "text-gray-700"}`}>{fmt(s.currentLiters)}</span> L {isLow && "⚠"}
-                          </span>
-                          {meterL !== null && (
-                            <span className="text-xs text-purple-400">
-                              มิเตอร์ <span className="font-bold text-purple-600">{fmt(meterL)}</span> L
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
-                        {pctMeter !== null && (
-                          <div
-                            className={`absolute h-full rounded-full transition-all duration-500 ${FUEL_COLOR[s.fuelType.name] ?? "bg-gray-400"}`}
-                            style={{ width: `${Math.max(pctSystem, pctMeter)}%` }}
-                          />
-                        )}
-                        <div
-                          className={`absolute h-full rounded-full transition-all duration-500 ${isLow ? "bg-red-300" : (FUEL_COLOR_LIGHT[s.fuelType.name] ?? "bg-gray-200")}`}
-                          style={{ width: `${pctSystem}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* ทุนเฉลี่ยในถัง FIFO */}
-            {compares.length > 0 && purchases.length > 0 && (() => {
-              const rows = compares.map((c) => {
-                const remaining = Math.max(0, c.stockByMeter);
-                const fuelPurchases = purchases
-                  .filter((p) => p.fuelTypeId === c.fuelTypeId)
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                const sellPrice = fuelPurchases[0]?.fuelType.currentPrice ?? 0;
-                let need = remaining;
-                let totalCost = 0;
-                for (const p of fuelPurchases) {
-                  if (need <= 0) break;
-                  const take = Math.min(need, p.liters);
-                  totalCost += take * p.costPerLiter;
-                  need -= take;
-                }
-                const avgCost = remaining > 0 ? totalCost / remaining : 0;
-                const profitPerLiter = sellPrice > 0 ? sellPrice - avgCost : null;
-                return { label: c.label, remaining, avgCost, sellPrice, profitPerLiter, stockValue: avgCost * remaining };
-              }).filter((r) => r.remaining > 0);
-              if (!rows.length) return null;
-              return (
-                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-50">
-                    <p className="text-sm font-bold text-gray-700">ทุนเฉลี่ยในถัง</p>
-                    <p className="text-xs text-gray-400 mt-0.5">FIFO · คงเหลือตามมิเตอร์</p>
-                  </div>
-                  <div className="divide-y divide-gray-50">
-                    {rows.map((r) => (
-                      <div key={r.label} className="px-5 py-4">
-                        <div className="flex justify-between items-baseline mb-3">
-                          <p className="text-sm font-bold text-gray-800">{r.label}</p>
-                          <p className="text-xs text-gray-400">{fmtDec(r.remaining)} L คงเหลือ</p>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                          <div className="bg-gray-50 rounded-xl py-2.5">
-                            <p className="text-gray-400 mb-1">ทุนเฉลี่ย</p>
-                            <p className="font-bold text-gray-800">{fmtDec(r.avgCost)} ฿</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl py-2.5">
-                            <p className="text-gray-400 mb-1">ขาย/ลิตร</p>
-                            <p className="font-bold text-gray-800">{r.sellPrice > 0 ? `${fmtDec(r.sellPrice)} ฿` : "—"}</p>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl py-2.5">
-                            <p className="text-gray-400 mb-1">กำไร/ลิตร</p>
-                            <p className={`font-bold ${r.profitPerLiter === null ? "text-gray-300" : r.profitPerLiter >= 0 ? "text-green-600" : "text-red-500"}`}>
-                              {r.profitPerLiter !== null ? `${r.profitPerLiter >= 0 ? "+" : ""}${fmtDec(r.profitPerLiter)} ฿` : "—"}
-                            </p>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl py-2.5">
-                            <p className="text-gray-400 mb-1">มูลค่าสต็อก</p>
-                            <p className="font-bold text-gray-800">{fmt(r.stockValue)} ฿</p>
-                          </div>
-                        </div>
-                      </div>
+                  <div className="space-y-1">
+                    {lowAlerts.map((s) => (
+                      <p key={s.id} className="text-xs font-semibold text-red-600">
+                        {s.fuelType.label} เหลือ {fmt(s.currentLiters)} L
+                      </p>
+                    ))}
+                    {lowProductAlerts.slice(0, 4).map((p) => (
+                      <p key={p.id} className="text-xs font-semibold text-red-600">
+                        {p.name} เหลือ {p.currentStock} {p.unit}
+                      </p>
                     ))}
                   </div>
                 </div>
-              );
-            })()}
+              </section>
+            )}
 
-            {/* เทียบสต๊อก: ตำเงิน vs มิเตอร์ */}
-            {compares.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-50">
-                  <p className="text-sm font-bold text-gray-700">เทียบสต๊อก</p>
-                  <p className="text-xs text-gray-400 mt-0.5">คำนวณจากวัดถังล่าสุด + ซื้อ − ขาย</p>
-                </div>
-                {compares.map((c) => {
-                  const diff = c.diffMeterVsCash;
-                  const bigDiff = Math.abs(diff) > 5;
+            {/* FUEL STOCK CARDS */}
+            <section className="px-5 pt-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-lg font-black">น้ำมันคงเหลือ</h2>
+                <span className="text-xs text-slate-400">{stocks.length} ชนิด</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {stocks.map((s) => {
+                  const cmp = compares.find((c) => c.fuelTypeId === s.fuelTypeId);
+                  const meterL = cmp ? Math.max(0, cmp.stockByMeter) : null;
+                  const capacity = Math.max(s.currentLiters, meterL ?? 0, 3000);
+                  const pct = Math.max(0, Math.min(100, (s.currentLiters / capacity) * 100));
+                  const isLow = s.currentLiters < LOW_THRESHOLD;
+
                   return (
-                    <div key={c.fuelTypeId} className="px-5 py-4 border-b border-gray-50 last:border-0">
-                      <div className="flex justify-between items-baseline mb-2">
-                        <p className="text-sm font-bold text-gray-800">{c.label}</p>
-                        {c.lastCheckDate && (
-                          <p className="text-xs text-gray-400">วัดถังล่าสุด {shortDate(c.lastCheckDate)} · {fmt(c.lastCheckActual)} L</p>
+                    <div key={s.id} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${FUEL_COLOR_LIGHT[s.fuelType.name] ?? "bg-slate-100"}`}>
+                            ⛽
+                          </div>
+                          <p className="text-sm font-black">{s.fuelType.label}</p>
+                        </div>
+                        {isLow && (
+                          <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">ต่ำ</span>
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-blue-50 rounded-xl p-3 text-center">
-                          <p className="text-xs text-blue-500 font-semibold">ขายตามเงิน</p>
-                          <p className="text-xl font-bold text-blue-700 mt-0.5">{fmtDec(c.soldByCash)}</p>
-                          <p className="text-xs text-blue-400">ลิตร</p>
-                        </div>
-                        <div className="bg-purple-50 rounded-xl p-3 text-center">
-                          <p className="text-xs text-purple-500 font-semibold">ขายตามมิเตอร์</p>
-                          <p className="text-xl font-bold text-purple-700 mt-0.5">{fmtDec(c.soldByMeter)}</p>
-                          {c.estimateDaysCount > 0 && (
-                            <p className="text-xs text-purple-300">{c.estimateDaysCount} วัน estimate</p>
-                          )}
-                        </div>
+                      <p className="mt-2 text-2xl font-black tabular-nums">
+                        {fmt(s.currentLiters)} <span className="text-sm font-semibold text-slate-400">L</span>
+                      </p>
+
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${isLow ? "bg-red-400" : (FUEL_COLOR[s.fuelType.name] ?? "bg-blue-500")}`}
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
 
-                      <div className={`mt-2 rounded-xl px-3 py-2.5 flex justify-between items-center ${bigDiff ? "bg-red-50" : "bg-green-50"}`}>
-                        <p className={`text-xs font-bold ${bigDiff ? "text-red-600" : "text-green-600"}`}>
-                          {bigDiff ? "⚠ ต่างกัน" : "✓ ต่างกัน"}
-                          {c.meterDaysCount > 0 && (
-                            <span className="font-normal ml-1 opacity-60">({c.meterDaysCount} วันมิเตอร์จริง)</span>
-                          )}
+                      {meterL !== null && (
+                        <p className="mt-2 text-[10px] text-slate-400">
+                          มิเตอร์ประมาณ {fmt(meterL)} L
                         </p>
-                        <p className={`text-sm font-bold ${bigDiff ? "text-red-600" : "text-green-600"}`}>
-                          {diff > 0 ? "+" : ""}{fmtDec(diff)} ลิตร
-                        </p>
-                      </div>
-
-                      <div className="mt-2 bg-gray-50 rounded-xl px-3 py-2 flex justify-between items-center">
-                        <p className="text-xs text-gray-500">คงเหลือจากระบบ</p>
-                        <p className="text-sm font-bold text-gray-700">{fmt(c.systemStock)} L</p>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            )}
+            </section>
 
-            {/* Product stock card */}
-            {products.filter((p) => p.isActive).length > 0 && (() => {
-              const active = products.filter((p) => p.isActive);
-              const byCategory: Record<string, typeof active> = {};
-              for (const p of active) {
-                const cat = p.category || "อื่นๆ";
-                if (!byCategory[cat]) byCategory[cat] = [];
-                byCategory[cat].push(p);
-              }
-              return (
-                <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                  <div className="flex justify-between items-center px-5 py-4 border-b border-gray-50">
-                    <p className="text-sm font-bold text-gray-700">สินค้าในร้าน ({active.length})</p>
-                    <button onClick={() => router.push("/settings/products")} className="text-xs text-purple-600 font-medium">จัดการ →</button>
-                  </div>
-                  {Object.entries(byCategory).map(([cat, items]) => (
-                    <div key={cat}>
-                      <p className="px-5 pt-3 pb-1 text-xs font-bold text-gray-400 uppercase tracking-wide">{cat}</p>
-                      <div className="divide-y divide-gray-50">
-                        {items.map((p) => {
-                          const isLow = p.currentStock <= p.minStock;
-                          const profit = p.currentPrice > 0 && p.costPrice > 0 ? p.currentPrice - p.costPrice : null;
-                          return (
-                            <div key={p.id} className="px-5 py-2.5 flex items-center gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-800">
-                                  {p.name}
-                                  {p.size && <span className="text-xs text-gray-400 font-normal ml-1">{p.size}</span>}
-                                </p>
-                                <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
-                                  {p.currentPrice > 0 && <span>ขาย {p.currentPrice} ฿</span>}
-                                  {p.costPrice > 0 && <span>ทุน {p.costPrice} ฿</span>}
-                                  {profit !== null && (
-                                    <span className={`font-semibold ${profit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                      กำไร {profit >= 0 ? "+" : ""}{profit} ฿/ชิ้น
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <span className={`text-sm font-bold px-3 py-1 rounded-full flex-shrink-0 ${isLow ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-700"}`}>
-                                {p.currentStock} {p.unit} {isLow ? "⚠" : ""}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+            {/* DEBT */}
+            <section className="px-5 pt-6">
+              <div className="rounded-[26px] border border-red-100 bg-white shadow-sm overflow-hidden">
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold text-red-500">ค้างจ่ายทั้งหมด</p>
+                      <p className="mt-1 text-3xl font-black text-slate-900 tabular-nums">
+                        ฿{fmt(totalUnpaid)}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              );
-            })()}
+                    <button
+                      onClick={() => setShowDebtForm((v) => !v)}
+                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600"
+                    >
+                      + บันทึก
+                    </button>
+                  </div>
 
-            {/* Tabs: ประวัติ */}
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex border-b border-gray-100">
-                {(["purchases", "checks"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTab(t)}
-                    className={`flex-1 py-3 text-sm font-semibold transition-colors ${
-                      tab === t ? "text-blue-600 border-b-2 border-blue-600" : "text-gray-400"
-                    }`}
-                  >
-                    {t === "purchases" ? "ประวัติรับน้ำมัน" : "ประวัติวัดถัง"}
-                  </button>
-                ))}
-              </div>
-
-              {tab === "purchases" && (() => {
-                // FIFO backward: ทุนเฉลี่ยเฉพาะน้ำมันที่เหลือในถัง (stockByMeter)
-                const fifoByFuel: Record<string, { label: string; sellPrice: number; remainingLiters: number; avgCost: number }> = {};
-                for (const c of compares) {
-                  const remaining = Math.max(0, c.stockByMeter);
-                  const fuelPurchases = purchases
-                    .filter((p) => p.fuelTypeId === c.fuelTypeId)
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                  const sellPrice = fuelPurchases[0]?.fuelType.currentPrice ?? 0;
-                  let need = remaining;
-                  let totalCost = 0;
-                  for (const p of fuelPurchases) {
-                    if (need <= 0) break;
-                    const take = Math.min(need, p.liters);
-                    totalCost += take * p.costPerLiter;
-                    need -= take;
-                  }
-                  const avgCost = remaining > 0 ? totalCost / remaining : 0;
-                  fifoByFuel[c.label] = { label: c.label, sellPrice, remainingLiters: remaining, avgCost };
-                }
-                return (
-                  <div>
-                    {Object.values(fifoByFuel).length > 0 && (
-                      <div className="bg-blue-50 border-b border-blue-100 px-5 py-4 space-y-3">
-                        <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">ทุนเฉลี่ยในถัง (FIFO · ตามมิเตอร์)</p>
-                        {Object.values(fifoByFuel).map((f) => {
-                          const profitPerLiter = f.sellPrice > 0 ? f.sellPrice - f.avgCost : null;
-                          const totalStockValue = f.avgCost * f.remainingLiters;
-                          return (
-                            <div key={f.label} className="bg-white rounded-xl px-4 py-3">
-                              <div className="flex justify-between items-baseline mb-2">
-                                <p className="text-sm font-semibold text-gray-800">{f.label}</p>
-                                <p className="text-xs text-gray-400">{fmtDec(f.remainingLiters)} L คงเหลือ</p>
-                              </div>
-                              <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                                <div>
-                                  <p className="text-gray-400">ทุนเฉลี่ย</p>
-                                  <p className="font-bold text-gray-700">{fmtDec(f.avgCost)} ฿</p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-400">ขาย/ลิตร</p>
-                                  <p className="font-bold text-gray-700">{f.sellPrice > 0 ? `${fmtDec(f.sellPrice)} ฿` : "—"}</p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-400">กำไร/ลิตร</p>
-                                  <p className={`font-bold ${profitPerLiter === null ? "text-gray-300" : profitPerLiter >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                    {profitPerLiter !== null ? `${profitPerLiter >= 0 ? "+" : ""}${fmtDec(profitPerLiter)} ฿` : "—"}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-gray-400">มูลค่าสต็อก</p>
-                                  <p className="font-bold text-gray-700">{fmt(totalStockValue)} ฿</p>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
+                  {showDebtForm && (
+                    <form onSubmit={saveDebt} className="mt-4 space-y-3 rounded-2xl bg-slate-50 p-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={debtForm.supplier}
+                          required
+                          onChange={(e) => setDebtForm((f) => ({ ...f, supplier: e.target.value }))}
+                          placeholder="ผู้ส่ง / บริษัท"
+                          className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-red-400"
+                        />
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          value={debtForm.amount}
+                          required
+                          onChange={(e) => setDebtForm((f) => ({ ...f, amount: e.target.value }))}
+                          placeholder="ยอดเงิน"
+                          className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-red-400"
+                        />
                       </div>
-                    )}
-                    <div className="divide-y divide-gray-50">
-                  {purchases.length === 0 ? (
-                    <p className="text-center text-gray-300 py-8 text-sm">ยังไม่มีรายการ</p>
-                  ) : (
-                    purchases.map((p) => {
-                      const sellPrice = p.fuelType.currentPrice;
-                      const profitPerLiter = sellPrice > 0 ? sellPrice - p.costPerLiter : null;
-                      const totalProfit = profitPerLiter !== null ? profitPerLiter * p.liters : null;
-                      return (
-                        <div key={p.id} className="px-5 py-4">
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-800">{p.fuelType.label}</p>
-                              <p className="text-xs text-gray-400">
-                                {shortDate(p.date)}{p.supplier ? ` · ${p.supplier}` : ""}{p.invoiceNo ? ` · ${p.invoiceNo}` : ""}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {!p.isPaid && (
-                                <button onClick={() => markPaid(p.id)} disabled={markingPaidId === p.id}
-                                  className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-lg hover:bg-green-500 hover:text-white disabled:opacity-40 transition-colors">
-                                  {markingPaidId === p.id ? "..." : "ค้างจ่าย"}
-                                </button>
-                              )}
-                              <p className="text-sm font-bold text-amber-600">+{fmt(p.liters)} L</p>
-                              <button
-                                onClick={() => deletePurchase(p.id, p.liters, p.fuelType.label)}
-                                disabled={deletingId === p.id}
-                                className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-40"
-                              >
-                                {deletingId === p.id ? "..." : "ลบ"}
-                              </button>
-                            </div>
-                          </div>
-                          <div className="bg-gray-50 rounded-xl px-3 py-2 grid grid-cols-3 gap-2 text-center text-xs">
-                            <div>
-                              <p className="text-gray-400">ทุน/ลิตร</p>
-                              <p className="font-bold text-gray-700">{fmtDec(p.costPerLiter)} ฿</p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400">ขาย/ลิตร</p>
-                              <p className="font-bold text-gray-700">
-                                {sellPrice > 0 ? `${fmtDec(sellPrice)} ฿` : <span className="text-gray-300">—</span>}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-gray-400">กำไร/ลิตร</p>
-                              <p className={`font-bold ${profitPerLiter === null ? "text-gray-300" : profitPerLiter >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                {profitPerLiter !== null ? `${profitPerLiter >= 0 ? "+" : ""}${fmtDec(profitPerLiter)} ฿` : "—"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex justify-between mt-2 text-xs text-gray-500">
-                            <span>ต้นทุนรวม {fmtDec(p.totalCost)} ฿</span>
-                            {totalProfit !== null && (
-                              <span className={`font-semibold ${totalProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                กำไรรวม {totalProfit >= 0 ? "+" : ""}{fmt(totalProfit)} ฿
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
+                      <input
+                        type="text"
+                        value={debtForm.note}
+                        onChange={(e) => setDebtForm((f) => ({ ...f, note: e.target.value }))}
+                        placeholder="หมายเหตุ"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-red-400"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="date"
+                          value={debtForm.date}
+                          onChange={(e) => setDebtForm((f) => ({ ...f, date: e.target.value }))}
+                          className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingDebt}
+                          className="h-11 rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-50"
+                        >
+                          {savingDebt ? "..." : "บันทึกค้างจ่าย"}
+                        </button>
+                      </div>
+                    </form>
                   )}
                 </div>
-                  </div>
-                );
-              })()}
 
-              {tab === "checks" && (
-                <div className="divide-y divide-gray-50">
-                  {checks.length === 0 ? (
-                    <p className="text-center text-gray-300 py-8 text-sm">ยังไม่มีรายการ</p>
-                  ) : (
-                    checks.map((c) => {
-                      const isShort = c.difference < -20;
-                      return (
-                        <div key={c.id} className="px-5 py-3 flex justify-between items-center">
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{c.fuelType.label}</p>
-                            <p className="text-xs text-gray-400">
-                              {shortDate(c.date)} · ระบบ {fmt(c.systemLiters)} L · จริง {fmt(c.actualLiters)} L
-                            </p>
+                {(unpaidDebts.length > 0 || unpaidPurchases.length > 0) && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
+                    {unpaidDebts.slice(0, 4).map((d) => (
+                      <div key={d.id} className="p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold">{d.supplier}</p>
+                            <p className="mt-0.5 text-xs text-slate-400">{shortDate(d.date)}{d.note ? ` · ${d.note}` : ""}</p>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-right">
-                              <p className={`text-sm font-bold ${isShort ? "text-red-600" : c.difference > 0 ? "text-yellow-600" : "text-green-600"}`}>
-                                {c.difference > 0 ? "+" : ""}{fmtDec(c.difference)} L
-                              </p>
-                              {isShort && <p className="text-xs text-red-500">ขาด</p>}
-                            </div>
+                          <p className="shrink-0 font-black text-red-600">฿{fmt(d.amount)}</p>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => { setPartialId(partialId === d.id ? null : d.id); setPartialAmount(""); }}
+                            className="rounded-xl bg-orange-50 px-3 py-2 text-xs font-bold text-orange-600"
+                          >
+                            จ่ายบางส่วน
+                          </button>
+                          <button
+                            onClick={() => markDebtPaid(d.id)}
+                            disabled={markingDebtId === d.id}
+                            className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-600"
+                          >
+                            จ่ายครบ
+                          </button>
+                          <button
+                            onClick={() => deleteDebt(d.id)}
+                            disabled={deletingDebtId === d.id}
+                            className="ml-auto px-2 text-xs font-semibold text-red-300"
+                          >
+                            ลบ
+                          </button>
+                        </div>
+                        {partialId === d.id && (
+                          <div className="mt-3 flex gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              value={partialAmount}
+                              onChange={(e) => setPartialAmount(e.target.value)}
+                              placeholder="จำนวนที่จ่าย"
+                              className="min-w-0 flex-1 rounded-xl border border-orange-200 px-3 py-2 text-sm outline-none"
+                            />
                             <button
-                              onClick={() => deleteCheck(c.id, c.fuelType.label)}
-                              disabled={deletingCheckId === c.id}
-                              className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                              onClick={() => payPartial(d.id)}
+                              disabled={!partialAmount || markingDebtId === d.id}
+                              className="rounded-xl bg-orange-500 px-4 text-sm font-bold text-white disabled:opacity-40"
                             >
-                              {deletingCheckId === c.id ? "..." : "ลบ"}
+                              หัก
                             </button>
                           </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {unpaidPurchases.slice(0, 4).map((p) => (
+                      <div key={p.id} className="flex items-center justify-between gap-3 p-4">
+                        <div>
+                          <p className="text-sm font-bold">{p.fuelType.label}</p>
+                          <p className="text-xs text-slate-400">{shortDate(p.date)}{p.supplier ? ` · ${p.supplier}` : ""}</p>
                         </div>
-                      );
-                    })
-                  )}
+                        <div className="flex items-center gap-2">
+                          <p className="font-black text-red-600">฿{fmt(p.totalCost)}</p>
+                          <button
+                            onClick={() => markPaid(p.id)}
+                            disabled={markingPaidId === p.id}
+                            className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-600"
+                          >
+                            จ่ายแล้ว
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* COMPARE */}
+            {compares.length > 0 && (
+              <section className="px-5 pt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-black">เทียบสต็อก</h2>
+                  <span className="text-xs text-slate-400">ระบบ vs มิเตอร์</span>
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-3">
+                  {compares.map((c) => {
+                    const diff = c.diffMeterVsCash;
+                    const bigDiff = Math.abs(diff) > 5;
+
+                    return (
+                      <div key={c.fuelTypeId} className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-black">{c.label}</p>
+                            {c.lastCheckDate && (
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                วัดถังล่าสุด {shortDate(c.lastCheckDate)}
+                              </p>
+                            )}
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${bigDiff ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
+                            {bigDiff ? "มียอดต่าง" : "ปกติ"}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          <div className="rounded-2xl bg-blue-50 p-3 text-center">
+                            <p className="text-[10px] text-blue-400">ขายตามเงิน</p>
+                            <p className="mt-1 text-base font-black text-blue-700">{fmtDec(c.soldByCash)}</p>
+                          </div>
+                          <div className="rounded-2xl bg-violet-50 p-3 text-center">
+                            <p className="text-[10px] text-violet-400">ตามมิเตอร์</p>
+                            <p className="mt-1 text-base font-black text-violet-700">{fmtDec(c.soldByMeter)}</p>
+                          </div>
+                          <div className={`rounded-2xl p-3 text-center ${bigDiff ? "bg-red-50" : "bg-emerald-50"}`}>
+                            <p className={`text-[10px] ${bigDiff ? "text-red-400" : "text-emerald-400"}`}>ต่าง</p>
+                            <p className={`mt-1 text-base font-black ${bigDiff ? "text-red-700" : "text-emerald-700"}`}>
+                              {diff > 0 ? "+" : ""}{fmtDec(diff)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* PRODUCTS */}
+            {products.filter((p) => p.isActive).length > 0 && (
+              <section className="px-5 pt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-black">สินค้าในร้าน</h2>
+                  <button onClick={() => router.push("/settings/products")} className="text-xs font-semibold text-blue-600">
+                    จัดการ →
+                  </button>
+                </div>
+
+                <div className="rounded-[24px] border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+                  {products.filter((p) => p.isActive).slice(0, 8).map((p) => {
+                    const isLow = p.currentStock <= p.minStock;
+                    return (
+                      <div key={p.id} className="flex items-center gap-3 p-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-100">▣</div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold">{p.name}</p>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {p.currentPrice > 0 ? `ขาย ฿${fmt(p.currentPrice)}` : "ยังไม่ตั้งราคา"}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-bold ${isLow ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-600"}`}>
+                          {p.currentStock} {p.unit}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* HISTORY */}
+            <section className="px-5 pt-6 pb-28">
+              <div className="rounded-[24px] border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="grid grid-cols-2 border-b border-slate-100">
+                  <button
+                    onClick={() => setTab("purchases")}
+                    className={`py-3 text-sm font-bold ${tab === "purchases" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400"}`}
+                  >
+                    ประวัติรับน้ำมัน
+                  </button>
+                  <button
+                    onClick={() => setTab("checks")}
+                    className={`py-3 text-sm font-bold ${tab === "checks" ? "text-blue-600 border-b-2 border-blue-600" : "text-slate-400"}`}
+                  >
+                    ประวัติวัดถัง
+                  </button>
+                </div>
+
+                {tab === "purchases" ? (
+                  <div className="divide-y divide-slate-100">
+                    {purchases.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-slate-300">ยังไม่มีรายการ</p>
+                    ) : (
+                      purchases.slice(0, 8).map((p) => (
+                        <div key={p.id} className="p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold">{p.fuelType.label}</p>
+                              <p className="text-xs text-slate-400">{shortDate(p.date)}{p.supplier ? ` · ${p.supplier}` : ""}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-black text-blue-600">+{fmt(p.liters)} L</p>
+                              <p className="text-xs text-slate-400">ทุน {fmtDec(p.costPerLiter)} ฿/L</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {checks.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-slate-300">ยังไม่มีรายการ</p>
+                    ) : (
+                      checks.slice(0, 8).map((c) => {
+                        const isShort = c.difference < -20;
+                        return (
+                          <div key={c.id} className="flex items-center justify-between gap-3 p-4">
+                            <div>
+                              <p className="text-sm font-bold">{c.fuelType.label}</p>
+                              <p className="text-xs text-slate-400">
+                                {shortDate(c.date)} · ระบบ {fmt(c.systemLiters)} L · จริง {fmt(c.actualLiters)} L
+                              </p>
+                            </div>
+                            <p className={`font-black ${isShort ? "text-red-600" : c.difference > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                              {c.difference > 0 ? "+" : ""}{fmtDec(c.difference)} L
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
           </>
         )}
+
+        {/* BOTTOM NAV */}
+        <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[480px] border-t border-slate-200 bg-white/95 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:bottom-5 md:rounded-b-[34px]">
+          <div className="grid grid-cols-5">
+            <BottomNav label="หน้าหลัก" icon="⌂" active={pathname === "/dashboard"} onClick={() => router.push("/dashboard")} />
+            <BottomNav label="ขาย" icon="⛽" active={pathname.startsWith("/sales") || pathname === "/quick"} onClick={() => router.push("/sales/new")} />
+            <BottomNav label="สต็อก" icon="◇" active={pathname.startsWith("/stock")} onClick={() => router.push("/stock")} />
+            <BottomNav label="มิเตอร์" icon="▥" active={pathname.startsWith("/meter")} onClick={() => router.push("/meter")} />
+            <BottomNav label="รายงาน" icon="▮" active={pathname.startsWith("/report")} onClick={() => router.push("/reports")} />
+          </div>
+        </nav>
       </div>
-    </div>
-    </>
+    </main>
+  );
+}
+
+function BottomNav({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex min-h-[58px] flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-bold ${
+        active ? "text-blue-600" : "text-slate-400"
+      }`}
+    >
+      <span className={`text-[22px] leading-none ${active ? "scale-110" : ""}`}>{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 }
