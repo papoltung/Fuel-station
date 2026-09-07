@@ -1,27 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type FuelType = { id: number; name: string; label: string; currentPrice: number };
-type Product = { id: number; name: string; category: string; size: string; unit: string; currentPrice: number; currentStock: number; image: string | null };
+type FuelType = {
+  id: number;
+  name: string;
+  label: string;
+  currentPrice: number;
+};
+
+type Product = {
+  id: number;
+  name: string;
+  category: string;
+  size: string;
+  unit: string;
+  currentPrice: number;
+  currentStock: number;
+  image: string | null;
+};
 
 const PUMP_OPTIONS = ["1", "2", "3", "4"];
 const PAYMENT_OPTIONS = [
-  { value: "cash", label: "เงินสด" },
-  { value: "transfer", label: "โอน" },
-  { value: "credit", label: "เครดิต" },
+  { value: "cash", label: "เงินสด", icon: "฿" },
+  { value: "transfer", label: "โอน", icon: "⇄" },
+  { value: "credit", label: "เครดิต", icon: "▣" },
 ];
+const QUICK_AMOUNTS = [100, 200, 300, 500, 1000];
 const SELLER_KEY = "fuel_last_seller";
-
-const PAYMENT_COLOR: Record<string, string> = {
-  cash: "bg-green-600",
-  transfer: "bg-blue-600",
-  credit: "bg-orange-500",
-};
 
 export default function NewSalePage() {
   const router = useRouter();
+
   const [saleType, setSaleType] = useState<"fuel" | "product">("fuel");
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -30,8 +41,14 @@ export default function NewSalePage() {
   const [success, setSuccess] = useState(false);
   const [successData, setSuccessData] = useState({ amount: 0, label: "" });
 
-  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
-  const nowDT = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+  const nowDT = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(
+      d.getMinutes()
+    ).padStart(2, "0")}`;
+  };
 
   const [fuelForm, setFuelForm] = useState({
     date: nowDT(),
@@ -59,19 +76,34 @@ export default function NewSalePage() {
       .then((r) => r.json())
       .then((data: FuelType[]) => {
         setFuelTypes(data);
-        if (data.length > 0) {
-          const ft = data[0];
-          setFuelForm((f) => ({ ...f, fuelTypeId: String(ft.id), pricePerLiter: ft.currentPrice > 0 ? String(ft.currentPrice) : "" }));
+        const firstAvailable = data.find((x) => Number(x.currentPrice) > 0) ?? data[0];
+        if (firstAvailable) {
+          setFuelForm((f) => ({
+            ...f,
+            fuelTypeId: String(firstAvailable.id),
+            pricePerLiter:
+              Number(firstAvailable.currentPrice) > 0
+                ? String(firstAvailable.currentPrice)
+                : "",
+          }));
         }
-      });
+      })
+      .catch(() => setError("โหลดข้อมูลน้ำมันไม่สำเร็จ"));
+
     fetch("/api/products")
       .then((r) => r.json())
       .then((data: Product[]) => {
         setProducts(data);
         if (data.length > 0) {
-          setProductForm((f) => ({ ...f, productId: String(data[0].id), unitPrice: String(data[0].currentPrice) }));
+          setProductForm((f) => ({
+            ...f,
+            productId: String(data[0].id),
+            unitPrice: String(data[0].currentPrice),
+          }));
         }
-      });
+      })
+      .catch(() => {});
+
     const saved = localStorage.getItem(SELLER_KEY);
     if (saved) {
       setFuelForm((f) => ({ ...f, sellerName: saved }));
@@ -83,40 +115,72 @@ export default function NewSalePage() {
     setFuelForm((f) => ({ ...f, [field]: value }));
     setError("");
   }
+
   function setProd(field: string, value: string) {
     setProductForm((f) => ({ ...f, [field]: value }));
     setError("");
   }
+
+  const selectedFuel = useMemo(
+    () => fuelTypes.find((ft) => String(ft.id) === fuelForm.fuelTypeId),
+    [fuelTypes, fuelForm.fuelTypeId]
+  );
 
   const fuelPrice = Number(fuelForm.pricePerLiter || 0);
   const fuelAmount = Number(fuelForm.totalAmount || 0);
   const liters = fuelPrice > 0 && fuelAmount > 0 ? fuelAmount / fuelPrice : 0;
 
   const selectedProduct = products.find((p) => String(p.id) === productForm.productId);
-  const productTotal = Number(productForm.quantity || 0) * Number(productForm.unitPrice || 0);
+  const productTotal =
+    Number(productForm.quantity || 0) * Number(productForm.unitPrice || 0);
+
+  const canSubmitFuel =
+    !loading &&
+    !!fuelForm.fuelTypeId &&
+    fuelAmount > 0 &&
+    fuelPrice > 0 &&
+    !!fuelForm.paymentMethod &&
+    (fuelForm.paymentMethod !== "credit" || !!fuelForm.customerName.trim()) &&
+    !!fuelForm.sellerName.trim();
 
   async function submitFuel(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
     if (!fuelForm.sellerName.trim()) return setError("กรอกชื่อคนขาย");
     if (!fuelForm.fuelTypeId) return setError("เลือกชนิดน้ำมัน");
     if (!fuelForm.totalAmount || fuelAmount <= 0) return setError("กรอกยอดเงิน");
-    if (!fuelForm.pricePerLiter || fuelPrice <= 0) return setError("กรอกราคาต่อลิตร");
-    if (fuelForm.paymentMethod === "credit" && !fuelForm.customerName.trim()) return setError("กรอกชื่อลูกค้าเครดิต");
+    if (!fuelForm.pricePerLiter || fuelPrice <= 0)
+      return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
+    if (fuelForm.paymentMethod === "credit" && !fuelForm.customerName.trim())
+      return setError("กรอกชื่อลูกค้าเครดิต");
 
     setLoading(true);
     localStorage.setItem(SELLER_KEY, fuelForm.sellerName.trim());
+
     try {
       const res = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientRequestId: crypto.randomUUID(), ...fuelForm, pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`, date: fuelForm.date + "+07:00" }),
+        body: JSON.stringify({
+          clientRequestId: crypto.randomUUID(),
+          ...fuelForm,
+          pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
+          date: fuelForm.date + "+07:00",
+        }),
       });
+
       const data = await res.json();
-      if (!res.ok) return setError(data.error ?? "บันทึกไม่สำเร็จ");
-      setSuccessData({ amount: fuelAmount, label: `${liters.toFixed(2)} ลิตร` });
+      if (!res.ok) {
+        setError(data.error ?? "บันทึกไม่สำเร็จ");
+        return;
+      }
+
+      setSuccessData({
+        amount: fuelAmount,
+        label: `${selectedFuel?.label ?? ""} · ${liters.toFixed(2)} ลิตร`,
+      });
       setSuccess(true);
-      setTimeout(() => router.push("/dashboard"), 1500);
     } catch {
       setError("เกิดข้อผิดพลาด");
     } finally {
@@ -127,14 +191,19 @@ export default function NewSalePage() {
   async function submitProduct(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
     if (!productForm.sellerName.trim()) return setError("กรอกชื่อคนขาย");
     if (!productForm.productId) return setError("เลือกสินค้า");
-    if (!productForm.quantity || Number(productForm.quantity) <= 0) return setError("กรอกจำนวน");
-    if (!productForm.unitPrice || Number(productForm.unitPrice) <= 0) return setError("กรอกราคา");
-    if (productForm.paymentMethod === "credit" && !productForm.customerName.trim()) return setError("กรอกชื่อลูกค้าเครดิต");
+    if (!productForm.quantity || Number(productForm.quantity) <= 0)
+      return setError("กรอกจำนวน");
+    if (!productForm.unitPrice || Number(productForm.unitPrice) <= 0)
+      return setError("กรอกราคา");
+    if (productForm.paymentMethod === "credit" && !productForm.customerName.trim())
+      return setError("กรอกชื่อลูกค้าเครดิต");
 
     setLoading(true);
     localStorage.setItem(SELLER_KEY, productForm.sellerName.trim());
+
     try {
       const res = await fetch("/api/product-sales", {
         method: "POST",
@@ -145,11 +214,20 @@ export default function NewSalePage() {
           date: productForm.date + "+07:00",
         }),
       });
+
       const data = await res.json();
-      if (!res.ok) return setError(data.error ?? "บันทึกไม่สำเร็จ");
-      setSuccessData({ amount: productTotal, label: `${selectedProduct?.name ?? ""} ${productForm.quantity} ${selectedProduct?.unit ?? ""}` });
+      if (!res.ok) {
+        setError(data.error ?? "บันทึกไม่สำเร็จ");
+        return;
+      }
+
+      setSuccessData({
+        amount: productTotal,
+        label: `${selectedProduct?.name ?? ""} ${productForm.quantity} ${
+          selectedProduct?.unit ?? ""
+        }`,
+      });
       setSuccess(true);
-      setTimeout(() => router.push("/dashboard"), 1500);
     } catch {
       setError("เกิดข้อผิดพลาด");
     } finally {
@@ -157,265 +235,519 @@ export default function NewSalePage() {
     }
   }
 
+  function resetForNextSale() {
+    setSuccess(false);
+    setError("");
+    setFuelForm((f) => ({
+      ...f,
+      date: nowDT(),
+      totalAmount: "",
+      customerName: "",
+    }));
+  }
+
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <div className="text-6xl">✓</div>
-          <p className="text-2xl font-bold text-green-700">{successData.amount.toLocaleString("th-TH")} บาท</p>
-          <p className="text-gray-500">{successData.label}</p>
-        </div>
-      </div>
+      <main className="min-h-screen bg-slate-50 px-5 flex items-center justify-center">
+        <section className="w-full max-w-sm rounded-[28px] bg-white border border-slate-200 shadow-sm p-7 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-3xl font-bold">
+            ✓
+          </div>
+          <p className="text-sm text-slate-500">บันทึกการขายสำเร็จ</p>
+          <p className="mt-2 text-4xl font-black text-slate-950 tabular-nums">
+            ฿{successData.amount.toLocaleString("th-TH")}
+          </p>
+          <p className="mt-2 text-sm text-slate-500">{successData.label}</p>
+
+          <div className="mt-7 grid gap-3">
+            <button
+              type="button"
+              onClick={resetForNextSale}
+              className="h-14 rounded-2xl bg-blue-600 text-white font-bold text-base active:scale-[0.99] transition"
+            >
+              ขายรายการถัดไป
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              className="h-12 rounded-2xl bg-slate-100 text-slate-700 font-semibold"
+            >
+              กลับหน้าหลัก
+            </button>
+          </div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3">
-        <button onClick={() => router.push("/dashboard")} className="text-gray-500 text-xl w-8">←</button>
-        <h1 className="text-base font-bold text-gray-800">บันทึกยอดขาย</h1>
-      </div>
-
-      {/* Type selector */}
-      <div className="max-w-lg mx-auto px-4 pt-4">
-        <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-2xl">
+    <main className="min-h-screen bg-[#F6F8FC] text-slate-900">
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
+        <div className="max-w-lg mx-auto h-16 px-4 flex items-center justify-between">
           <button
             type="button"
-            onClick={() => { setSaleType("fuel"); setError(""); }}
-            className={`py-2.5 rounded-xl text-sm font-bold transition-all ${saleType === "fuel" ? "bg-white shadow text-blue-600" : "text-gray-500"}`}
+            onClick={() => router.push("/dashboard")}
+            className="h-10 w-10 rounded-xl flex items-center justify-center text-xl text-slate-700 hover:bg-slate-100"
+            aria-label="กลับ"
           >
-            ⛽ ขายน้ำมัน
+            ←
           </button>
+
+          <div className="text-center">
+            <h1 className="font-bold text-base">บันทึกการขาย</h1>
+            <p className="text-[11px] text-slate-400">แตะเลือก • ระบุยอด • บันทึก</p>
+          </div>
+
           <button
             type="button"
-            onClick={() => { setSaleType("product"); setError(""); }}
-            className={`py-2.5 rounded-xl text-sm font-bold transition-all ${saleType === "product" ? "bg-white shadow text-blue-600" : "text-gray-500"}`}
+            onClick={() => {
+              setFuel("totalAmount", "");
+              setError("");
+            }}
+            className="h-10 px-2 text-sm font-semibold text-blue-600"
           >
-            🛒 ขายสินค้า
+            ล้าง
+          </button>
+        </div>
+      </header>
+
+      <div className="max-w-lg mx-auto px-4 pt-4">
+        <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setSaleType("fuel");
+              setError("");
+            }}
+            className={`h-11 rounded-xl text-sm font-bold transition ${
+              saleType === "fuel"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500"
+            }`}
+          >
+            ⛽ น้ำมัน
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSaleType("product");
+              setError("");
+            }}
+            className={`h-11 rounded-xl text-sm font-bold transition ${
+              saleType === "product"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500"
+            }`}
+          >
+            ▣ สินค้า
           </button>
         </div>
       </div>
 
-      {/* Fuel form */}
-      {saleType === "fuel" && (
-        <form onSubmit={submitFuel} className="max-w-lg mx-auto p-4 space-y-5">
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ชนิดน้ำมัน</p>
-            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(fuelTypes.length, 4)}, 1fr)` }}>
-              {fuelTypes.map((ft) => (
-                <button
-                  key={ft.id}
-                  type="button"
-                  onClick={() => { setFuel("fuelTypeId", String(ft.id)); setFuel("pricePerLiter", ft.currentPrice > 0 ? String(ft.currentPrice) : ""); }}
-                  className={`py-4 rounded-2xl font-bold text-sm transition-all ${fuelForm.fuelTypeId === String(ft.id) ? "bg-blue-600 text-white shadow-md" : "bg-white text-gray-700 border-2 border-gray-200"}`}
-                >
-                  {ft.label}
-                  <span className={`block text-xs mt-0.5 font-normal ${fuelForm.fuelTypeId === String(ft.id) ? "text-blue-200" : "text-gray-400"}`}>
-                    {ft.currentPrice > 0 ? `${ft.currentPrice} บ/ล` : "ยังไม่ตั้งราคา"}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+      {saleType === "fuel" ? (
+        <form onSubmit={submitFuel} className="max-w-lg mx-auto px-4 pt-5 pb-36 space-y-6">
+          <section>
+            <SectionTitle title="เลือกน้ำมัน" />
+            <div className="grid grid-cols-2 gap-3">
+              {fuelTypes.map((ft) => {
+                const active = fuelForm.fuelTypeId === String(ft.id);
+                const available = Number(ft.currentPrice) > 0;
 
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">หัวจ่าย</p>
-            <div className="grid grid-cols-4 gap-2">
-              {PUMP_OPTIONS.map((p) => (
-                <button key={p} type="button" onClick={() => setFuel("pumpNo", p)}
-                  className={`py-3 rounded-xl font-bold text-lg transition-all ${fuelForm.pumpNo === p ? "bg-gray-800 text-white" : "bg-white text-gray-700 border-2 border-gray-200"}`}
-                >
-                  {p}
-                </button>
-              ))}
+                return (
+                  <button
+                    key={ft.id}
+                    type="button"
+                    disabled={!available}
+                    onClick={() => {
+                      setFuel("fuelTypeId", String(ft.id));
+                      setFuel("pricePerLiter", available ? String(ft.currentPrice) : "");
+                    }}
+                    className={`relative min-h-[92px] rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
+                      active
+                        ? "border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-600/15"
+                        : "border-slate-200 bg-white text-slate-900 shadow-sm"
+                    } ${!available ? "opacity-45" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-base">{ft.label}</span>
+                      {active && (
+                        <span className="h-6 w-6 rounded-full bg-white/20 flex items-center justify-center text-xs">
+                          ✓
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className={`mt-3 text-sm tabular-nums ${
+                        active ? "text-blue-100" : "text-slate-500"
+                      }`}
+                    >
+                      {available
+                        ? `${Number(ft.currentPrice).toFixed(2)} บาท/L`
+                        : "ยังไม่ตั้งราคา"}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          </section>
 
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ยอดเงิน (บาท)</p>
-            <div className="grid grid-cols-4 gap-2 mb-2">
-              {[50, 60, 70, 80, 100, 150, 200, 300, 500, 1000].map((amt) => (
-                <button key={amt} type="button" onClick={() => setFuel("totalAmount", String(amt))}
-                  className={`py-3 rounded-xl font-bold text-base transition-all ${fuelForm.totalAmount === String(amt) ? "bg-blue-600 text-white" : "bg-white text-gray-700 border-2 border-gray-200 active:bg-gray-100"}`}
-                >
-                  {amt}
-                </button>
-              ))}
-              <button type="button" onClick={() => setFuel("totalAmount", "")}
-                className={`py-3 rounded-xl font-bold text-sm transition-all col-span-2 ${fuelForm.totalAmount !== "" && !["50","60","70","80","100","150","200","300","500","1000"].includes(fuelForm.totalAmount) ? "bg-gray-700 text-white" : "bg-white text-gray-500 border-2 border-gray-200"}`}
+          <section>
+            <SectionTitle title="ยอดขาย" />
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-slate-800">฿</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={fuelForm.totalAmount}
+                  onChange={(e) => setFuel("totalAmount", e.target.value)}
+                  placeholder="0"
+                  className="min-w-0 w-full bg-transparent text-5xl leading-none font-black tabular-nums outline-none placeholder:text-slate-200"
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <span className="font-bold text-blue-600 tabular-nums">
+                  {liters > 0 ? `≈ ${liters.toFixed(2)} L` : "เลือกจำนวนเงิน"}
+                </span>
+                {fuelPrice > 0 && (
+                  <>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-500 tabular-nums">
+                      {fuelPrice.toFixed(2)} บาท/L
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {QUICK_AMOUNTS.map((amt) => {
+                const active = fuelForm.totalAmount === String(amt);
+                return (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setFuel("totalAmount", String(amt))}
+                    className={`h-12 rounded-2xl border text-base font-bold tabular-nums transition active:scale-[0.98] ${
+                      active
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-800"
+                    }`}
+                  >
+                    {amt.toLocaleString("th-TH")}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setFuel("totalAmount", "")}
+                className="h-12 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 active:scale-[0.98]"
               >
                 อื่นๆ
               </button>
             </div>
-            <input type="number" inputMode="numeric" value={fuelForm.totalAmount} onChange={(e) => setFuel("totalAmount", e.target.value)}
-              placeholder="กรอกยอดเอง" className="w-full border-2 border-gray-200 rounded-2xl px-4 py-3 text-3xl font-bold text-center focus:outline-none focus:border-blue-500" required />
-            {liters > 0 && <p className="text-center text-sm text-gray-400 mt-1">= {liters.toFixed(2)} ลิตร</p>}
-          </div>
+          </section>
 
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ราคาต่อลิตร</p>
-            <input type="number" step="0.01" inputMode="decimal" value={fuelForm.pricePerLiter} onChange={(e) => setFuel("pricePerLiter", e.target.value)}
-              placeholder="0.00" className="w-full border-2 border-gray-200 rounded-xl px-3 py-2.5 text-base font-mono focus:outline-none focus:border-blue-500" required />
-          </div>
+          <section>
+            <SectionTitle title="วิธีชำระเงิน" />
+            <PaymentRow value={fuelForm.paymentMethod} onChange={(v) => setFuel("paymentMethod", v)} />
+          </section>
 
-          <PaymentRow value={fuelForm.paymentMethod} onChange={(v) => setFuel("paymentMethod", v)} />
-          {fuelForm.paymentMethod === "credit" && (
-            <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ชื่อลูกค้า</p>
-              <input type="text" value={fuelForm.customerName} onChange={(e) => setFuel("customerName", e.target.value)}
-                placeholder="ชื่อลูกค้า / บริษัท" className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-blue-500" />
+          <section>
+            <SectionTitle title="หัวจ่าย" />
+            <div className="grid grid-cols-4 gap-2">
+              {PUMP_OPTIONS.map((p) => {
+                const active = fuelForm.pumpNo === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setFuel("pumpNo", p)}
+                    className={`h-12 rounded-2xl border font-bold transition active:scale-[0.98] ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
             </div>
+          </section>
+
+          {fuelForm.paymentMethod === "credit" && (
+            <section>
+              <SectionTitle title="ลูกค้าเครดิต" />
+              <input
+                type="text"
+                value={fuelForm.customerName}
+                onChange={(e) => setFuel("customerName", e.target.value)}
+                placeholder="ชื่อลูกค้า / บริษัท"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
+              />
+            </section>
           )}
 
-          <SellerRow value={fuelForm.sellerName} onChange={(v) => setFuel("sellerName", v)} />
-          <DateRow value={fuelForm.date} onChange={(v) => setFuel("date", v)} />
-          {error && <ErrorBox msg={error} />}
-          <SubmitBtn loading={loading} />
-        </form>
-      )}
+          <details className="group rounded-[22px] border border-slate-200 bg-white shadow-sm">
+            <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between font-semibold text-sm">
+              <span>ข้อมูลเพิ่มเติม</span>
+              <span className="text-slate-400 group-open:rotate-180 transition">↓</span>
+            </summary>
+            <div className="border-t border-slate-100 p-4 space-y-4">
+              <SellerRow value={fuelForm.sellerName} onChange={(v) => setFuel("sellerName", v)} />
+              <DateRow value={fuelForm.date} onChange={(v) => setFuel("date", v)} />
+            </div>
+          </details>
 
-      {/* Product form */}
-      {saleType === "product" && (
-        <form onSubmit={submitProduct} className="max-w-lg mx-auto p-4 space-y-5">
+          {error && <ErrorBox msg={error} />}
+
+          <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur">
+            <div className="max-w-lg mx-auto px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="truncate text-slate-500">
+                  {selectedFuel?.label ?? "เลือกน้ำมัน"}
+                  {liters > 0 ? ` · ${liters.toFixed(2)} L` : ""}
+                </span>
+                <span className="ml-3 font-black tabular-nums">
+                  ฿{fuelAmount.toLocaleString("th-TH")}
+                </span>
+              </div>
+              <button
+                type="submit"
+                disabled={!canSubmitFuel}
+                className="w-full h-14 rounded-2xl bg-blue-600 text-white font-extrabold text-lg shadow-lg shadow-blue-600/15 transition active:scale-[0.99] disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+              >
+                {loading
+                  ? "กำลังบันทึก..."
+                  : fuelAmount > 0
+                  ? `บันทึก ฿${fuelAmount.toLocaleString("th-TH")}`
+                  : "เลือกจำนวนเงิน"}
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={submitProduct} className="max-w-lg mx-auto px-4 pt-5 pb-10 space-y-6">
           {products.length === 0 ? (
-            <div className="text-center py-12 text-gray-400 space-y-2">
-              <p className="text-4xl">📦</p>
-              <p className="text-sm">ยังไม่มีสินค้า</p>
-              <button type="button" onClick={() => router.push("/settings/products")}
-                className="text-blue-600 text-sm underline">เพิ่มสินค้าใน Settings</button>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <div className="text-4xl">📦</div>
+              <p className="mt-3 font-bold">ยังไม่มีสินค้า</p>
+              <button
+                type="button"
+                onClick={() => router.push("/settings/products")}
+                className="mt-5 h-11 px-5 rounded-xl bg-blue-600 text-white font-semibold"
+              >
+                ไปที่การตั้งค่าสินค้า
+              </button>
             </div>
           ) : (
             <>
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">สินค้า</p>
-                {(() => {
-                    const byCat: Record<string, typeof products> = {};
-                    for (const p of products) {
-                      const cat = p.category || "อื่นๆ";
-                      if (!byCat[cat]) byCat[cat] = [];
-                      byCat[cat].push(p);
-                    }
-                    return Object.entries(byCat).map(([cat, items]) => (
-                      <div key={cat}>
-                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mt-3 mb-1">{cat}</p>
-                        <div className="space-y-1.5">
-                          {items.map((p) => (
-                            <button key={p.id} type="button"
-                              onClick={() => { setProd("productId", String(p.id)); setProd("unitPrice", String(p.currentPrice)); }}
-                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border-2 transition-all ${productForm.productId === String(p.id) ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white"}`}
-                            >
-                              {p.image ? (
-                                <img src={p.image} alt={p.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
-                              ) : (
-                                <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0 flex items-center justify-center text-lg">🛢</div>
-                              )}
-                              <div className="text-left flex-1 min-w-0">
-                                <p className={`font-bold text-sm ${productForm.productId === String(p.id) ? "text-blue-700" : "text-gray-800"}`}>
-                                  {p.name}
-                                  {p.size && <span className="font-normal text-xs ml-1 opacity-60">{p.size}</span>}
-                                </p>
-                                <p className="text-xs text-gray-400">คงเหลือ {p.currentStock} {p.unit}</p>
-                              </div>
-                              <span className={`text-sm font-semibold flex-shrink-0 ${productForm.productId === String(p.id) ? "text-blue-600" : "text-gray-500"}`}>
-                                {p.currentPrice > 0 ? `${p.currentPrice} บ` : "—"}
-                              </span>
-                            </button>
-                          ))}
+              <section>
+                <SectionTitle title="เลือกสินค้า" />
+                <div className="space-y-2">
+                  {products.map((p) => {
+                    const active = productForm.productId === String(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setProd("productId", String(p.id));
+                          setProd("unitPrice", String(p.currentPrice));
+                        }}
+                        className={`w-full rounded-[20px] border p-3 flex items-center gap-3 text-left transition ${
+                          active
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center text-xl">
+                          ▣
                         </div>
-                      </div>
-                    ));
-                  })()}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold truncate">{p.name}</p>
+                          <p className="text-xs text-slate-400">
+                            คงเหลือ {p.currentStock} {p.unit}
+                          </p>
+                        </div>
+                        <div className="font-bold tabular-nums">
+                          ฿{Number(p.currentPrice).toLocaleString("th-TH")}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="grid grid-cols-2 gap-3">
+                <div>
+                  <SectionTitle title={`จำนวน (${selectedProduct?.unit ?? "ชิ้น"})`} />
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    value={productForm.quantity}
+                    onChange={(e) => setProd("quantity", e.target.value)}
+                    className="w-full h-14 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold outline-none focus:border-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <SectionTitle title="ราคา/หน่วย" />
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={productForm.unitPrice}
+                    onChange={(e) => setProd("unitPrice", e.target.value)}
+                    className="w-full h-14 rounded-2xl border border-slate-200 bg-white px-3 text-center text-xl font-bold tabular-nums outline-none focus:border-blue-500"
+                    required
+                  />
+                </div>
+              </section>
+
+              <div className="rounded-[24px] bg-blue-600 p-5 text-white shadow-lg shadow-blue-600/15">
+                <p className="text-sm text-blue-100">ยอดรวม</p>
+                <p className="mt-1 text-4xl font-black tabular-nums">
+                  ฿{productTotal.toLocaleString("th-TH")}
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">จำนวน ({selectedProduct?.unit ?? "ชิ้น"})</p>
-                  <input type="number" inputMode="numeric" min="1" value={productForm.quantity} onChange={(e) => setProd("quantity", e.target.value)}
-                    className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-xl font-bold text-center focus:outline-none focus:border-blue-500" required />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ราคา/หน่วย (บาท)</p>
-                  <input type="number" inputMode="numeric" value={productForm.unitPrice} onChange={(e) => setProd("unitPrice", e.target.value)}
-                    placeholder="0" className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-xl font-bold text-center focus:outline-none focus:border-blue-500" required />
-                </div>
-              </div>
-              {productTotal > 0 && (
-                <div className="bg-blue-50 rounded-2xl p-4 text-center">
-                  <p className="text-xs text-blue-400 mb-1">ยอดรวม</p>
-                  <p className="text-3xl font-bold text-blue-700">{productTotal.toLocaleString("th-TH")} บาท</p>
-                </div>
-              )}
+              <section>
+                <SectionTitle title="วิธีชำระเงิน" />
+                <PaymentRow value={productForm.paymentMethod} onChange={(v) => setProd("paymentMethod", v)} />
+              </section>
 
-              <PaymentRow value={productForm.paymentMethod} onChange={(v) => setProd("paymentMethod", v)} />
               {productForm.paymentMethod === "credit" && (
-                <div>
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">ชื่อลูกค้า</p>
-                  <input type="text" value={productForm.customerName} onChange={(e) => setProd("customerName", e.target.value)}
-                    placeholder="ชื่อลูกค้า / บริษัท" className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-blue-500" />
-                </div>
+                <section>
+                  <SectionTitle title="ลูกค้าเครดิต" />
+                  <input
+                    type="text"
+                    value={productForm.customerName}
+                    onChange={(e) => setProd("customerName", e.target.value)}
+                    placeholder="ชื่อลูกค้า / บริษัท"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
+                  />
+                </section>
               )}
 
-              <SellerRow value={productForm.sellerName} onChange={(v) => setProd("sellerName", v)} />
-              <DateRow value={productForm.date} onChange={(v) => setProd("date", v)} />
+              <details className="group rounded-[22px] border border-slate-200 bg-white shadow-sm">
+                <summary className="cursor-pointer list-none px-4 py-4 flex items-center justify-between font-semibold text-sm">
+                  <span>ข้อมูลเพิ่มเติม</span>
+                  <span className="text-slate-400 group-open:rotate-180 transition">↓</span>
+                </summary>
+                <div className="border-t border-slate-100 p-4 space-y-4">
+                  <SellerRow value={productForm.sellerName} onChange={(v) => setProd("sellerName", v)} />
+                  <DateRow value={productForm.date} onChange={(v) => setProd("date", v)} />
+                </div>
+              </details>
+
               {error && <ErrorBox msg={error} />}
-              <SubmitBtn loading={loading} />
+
+              <button
+                type="submit"
+                disabled={loading || productTotal <= 0}
+                className="w-full h-14 rounded-2xl bg-blue-600 text-white font-extrabold text-lg disabled:bg-slate-200 disabled:text-slate-400"
+              >
+                {loading
+                  ? "กำลังบันทึก..."
+                  : `บันทึก ฿${productTotal.toLocaleString("th-TH")}`}
+              </button>
             </>
           )}
         </form>
       )}
-    </div>
+    </main>
   );
 }
 
-function PaymentRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function SectionTitle({ title }: { title: string }) {
+  return <p className="mb-2 text-[13px] font-bold text-slate-700">{title}</p>;
+}
+
+function PaymentRow({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">วิธีจ่าย</p>
-      <div className="grid grid-cols-3 gap-2">
-        {PAYMENT_OPTIONS.map((p) => (
-          <button key={p.value} type="button" onClick={() => onChange(p.value)}
-            className={`py-3 rounded-xl font-semibold text-sm transition-all ${value === p.value ? `${PAYMENT_COLOR[p.value]} text-white` : "bg-white text-gray-700 border-2 border-gray-200"}`}
+    <div className="grid grid-cols-3 gap-2">
+      {PAYMENT_OPTIONS.map((p) => {
+        const active = value === p.value;
+        return (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => onChange(p.value)}
+            className={`min-h-[72px] rounded-[20px] border flex flex-col items-center justify-center gap-1 transition active:scale-[0.98] ${
+              active
+                ? "border-blue-600 bg-blue-50 text-blue-700"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
           >
-            {p.label}
+            <span className="text-lg font-black">{p.icon}</span>
+            <span className="text-sm font-bold">{p.label}</span>
           </button>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
 
-function SellerRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function SellerRow({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <div>
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">คนขาย</p>
-      <input type="text" value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder="ชื่อคนขาย" className="w-full border-2 border-gray-200 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-blue-500" required />
+      <label className="mb-2 block text-xs font-semibold text-slate-500">คนขาย</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="ชื่อคนขาย"
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
+        required
+      />
     </div>
   );
 }
 
-function DateRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const display = value
-    ? new Date(value).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
-    : "";
+function DateRow({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <details className="text-sm">
-      <summary className="text-gray-400 cursor-pointer select-none">เวลา: {display}</summary>
-      <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)}
-        className="mt-2 w-full border-2 border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500" />
-    </details>
+    <div>
+      <label className="mb-2 block text-xs font-semibold text-slate-500">วันและเวลา</label>
+      <input
+        type="datetime-local"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500"
+      />
+    </div>
   );
 }
 
 function ErrorBox({ msg }: { msg: string }) {
-  return <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{msg}</div>;
-}
-
-function SubmitBtn({ loading }: { loading: boolean }) {
   return (
-    <button type="submit" disabled={loading}
-      className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-4 rounded-2xl text-xl transition-colors">
-      {loading ? "..." : "บันทึก"}
-    </button>
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+      {msg}
+    </div>
   );
 }
