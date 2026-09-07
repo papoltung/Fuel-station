@@ -617,7 +617,7 @@ export default function MeterPage() {
               label="ขาย"
               icon="⛽"
               active={pathname.startsWith("/sales") || pathname === "/quick"}
-              onClick={() => router.push("/sales/new")}
+              onClick={() => router.push("/quick")}
             />
             <NavButton
               label="สต็อก"
@@ -635,7 +635,7 @@ export default function MeterPage() {
               label="รายงาน"
               icon="▮"
               active={pathname.startsWith("/report")}
-              onClick={() => router.push("/reports")}
+              onClick={() => router.push("/dashboard")}
             />
           </div>
         </nav>

@@ -670,10 +670,10 @@ export default function StockPage() {
         <nav className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[480px] border-t border-slate-200 bg-white/95 px-3 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:bottom-5 md:rounded-b-[34px]">
           <div className="grid grid-cols-5">
             <BottomNav label="หน้าหลัก" icon="⌂" active={pathname === "/dashboard"} onClick={() => router.push("/dashboard")} />
-            <BottomNav label="ขาย" icon="⛽" active={pathname.startsWith("/sales") || pathname === "/quick"} onClick={() => router.push("/sales/new")} />
+            <BottomNav label="ขาย" icon="⛽" active={pathname.startsWith("/sales") || pathname === "/quick"} onClick={() => router.push("/quick")} />
             <BottomNav label="สต็อก" icon="◇" active={pathname.startsWith("/stock")} onClick={() => router.push("/stock")} />
             <BottomNav label="มิเตอร์" icon="▥" active={pathname.startsWith("/meter")} onClick={() => router.push("/meter")} />
-            <BottomNav label="รายงาน" icon="▮" active={pathname.startsWith("/report")} onClick={() => router.push("/reports")} />
+            <BottomNav label="รายงาน" icon="▮" active={pathname === "/dashboard"} onClick={() => router.push("/dashboard")} />
           </div>
         </nav>
       </div>

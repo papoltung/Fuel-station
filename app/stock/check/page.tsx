@@ -610,7 +610,7 @@ function BottomNav({
           label="ขาย"
           icon="⛽"
           active={pathname.startsWith("/sales") || pathname === "/quick"}
-          onClick={() => router.push("/sales/new")}
+          onClick={() => router.push("/quick")}
         />
         <NavItem
           label="สต็อก"
@@ -628,7 +628,7 @@ function BottomNav({
           label="รายงาน"
           icon="▮"
           active={pathname.startsWith("/report")}
-          onClick={() => router.push("/reports")}
+          onClick={() => router.push("/dashboard")}
         />
       </div>
     </nav>

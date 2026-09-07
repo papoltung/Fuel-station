@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.0.110", "*.trycloudflare.com"],
+  async redirects() {
+    return [
+      { source: "/sales/new", destination: "/quick", permanent: false },
+      { source: "/reports", destination: "/dashboard", permanent: false },
+    ];
+  },
   async headers() {
     return [{
       source: "/(.*)",
