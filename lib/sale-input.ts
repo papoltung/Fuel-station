@@ -1,4 +1,4 @@
-export const PAYMENT_METHODS = ["cash", "transfer", "credit"] as const;
+export const PAYMENT_METHODS = ["cash", "qr", "transfer", "credit"] as const;
 
 type SaleInput = {
   clientRequestId?: unknown;

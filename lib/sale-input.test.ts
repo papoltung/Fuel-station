@@ -42,6 +42,19 @@ test("rejects invalid numeric and payment values", () => {
   }
 });
 
+test("accepts QR as a payment method", () => {
+  const result = parseSaleInput({
+    clientRequestId: "sale-qr",
+    sellerName: "N",
+    fuelTypeId: 1,
+    pumpNo: "หัวจ่าย 1",
+    pricePerLiter: 35,
+    totalAmount: 100,
+    paymentMethod: "qr",
+  });
+  assert.equal(result.paymentMethod, "qr");
+});
+
 test("requires a customer for a credit sale", () => {
   assert.throws(() =>
     parseSaleInput({

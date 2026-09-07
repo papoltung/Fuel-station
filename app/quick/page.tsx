@@ -1,319 +1,240 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { browserSaleQueue, syncPendingSales, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = { id: number; name: string; label: string; currentPrice: number };
-type Summary = {
-  totalRevenue: number;
-  fuelRevenue: number;
-  productRevenue: number;
-  totalLiters: number;
-  productCount: number;
-  fuelByPayment: Record<string, number>;
-  productByPayment: Record<string, number>;
-};
+type Payment = "cash" | "qr" | "transfer";
+type QueueStatus = { queued: number; needsReview: number };
 
-const PRESETS = [50, 60, 80, 100, 150, 200, 300, 500, 1000];
-const ADJUSTS = [-100, -50, -10, 10, 50, 100];
-const PAYMENT_LABEL: Record<string, string> = { cash: "เงินสด", transfer: "โอน", credit: "เครดิต" };
-const PAYMENT_COLOR: Record<string, string> = { cash: "bg-emerald-500", transfer: "bg-blue-500", credit: "bg-orange-400" };
+const PRESETS = [50, 100, 200, 300, 500, 1000];
+const PAYMENTS: Array<{ value: Payment; label: string; icon: string }> = [
+  { value: "cash", label: "เงินสด", icon: "฿" },
+  { value: "qr", label: "QR", icon: "▦" },
+  { value: "transfer", label: "โอน", icon: "⇄" },
+];
 
-function fmtInt(n: number) { return n.toLocaleString("th-TH", { maximumFractionDigits: 0 }); }
-function fmtDec(n: number) { return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmt(value: number, digits = 0) {
+  return value.toLocaleString("th-TH", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
 function localDateKey() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function loadSummary(date: string, setSummary: (s: Summary) => void) {
-  fetch(`/api/sales/summary?date=${date}`)
-    .then((r) => r.json())
-    .then((s) => { if (!Array.isArray(s)) setSummary(s); })
-    .catch(() => {});
-}
-
-type QueueStatus = { queued: number; needsReview: number };
-type QueueSyncContext = {
-  today: string;
-  syncingRef: { current: boolean };
-  syncAgainRef: { current: boolean };
-  setSummary: (summary: Summary) => void;
-  setQueueStatus: (status: QueueStatus) => void;
-  setSyncing: (syncing: boolean) => void;
-};
-
-async function syncBrowserSales(context: QueueSyncContext) {
-  if (context.syncingRef.current) {
-    context.syncAgainRef.current = true;
-    return;
-  }
-  context.syncingRef.current = true;
-  context.setSyncing(true);
-  try {
-    const result = await syncPendingSales(browserSaleQueue, async (item) => {
-      const response = await fetch("/api/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(item.payload),
-      });
-      const data = await response.json().catch(() => ({}));
-      return { ok: response.ok, status: response.status, error: typeof data.error === "string" ? data.error : undefined };
-    });
-    context.setQueueStatus({ queued: result.queued, needsReview: result.needsReview });
-    if (result.synced > 0) loadSummary(context.today, context.setSummary);
-  } catch {
-    const items = await browserSaleQueue.list().catch(() => []);
-    context.setQueueStatus({
-      queued: items.filter((item) => item.status !== "needs-review").length,
-      needsReview: items.filter((item) => item.status === "needs-review").length,
-    });
-  } finally {
-    context.syncingRef.current = false;
-    context.setSyncing(false);
-    if (context.syncAgainRef.current) {
-      context.syncAgainRef.current = false;
-      void syncBrowserSales(context);
-    }
-  }
-}
-
 export default function QuickPage() {
-  const router = useRouter();
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [fuelId, setFuelId] = useState("");
-  const [payment, setPayment] = useState<"cash" | "transfer">("cash");
+  const [payment, setPayment] = useState<Payment>("cash");
   const [amount, setAmount] = useState(0);
+  const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-  const [flash, setFlash] = useState<{ liters: number; total: number } | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
+  const [message, setMessage] = useState("");
+  const [todayRevenue, setTodayRevenue] = useState<number | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus>({ queued: 0, needsReview: 0 });
   const [syncing, setSyncing] = useState(false);
-  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncingRef = useRef(false);
   const syncAgainRef = useRef(false);
+  const messageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [today] = useState(localDateKey);
 
+  async function loadSummary() {
+    const response = await fetch(`/api/sales/summary?date=${today}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    setTodayRevenue(Number(data.totalRevenue) || 0);
+  }
+
+  async function syncQueue() {
+    if (syncingRef.current) {
+      syncAgainRef.current = true;
+      return;
+    }
+    syncingRef.current = true;
+    setSyncing(true);
+    try {
+      const result = await syncPendingSales(browserSaleQueue, async (item) => {
+        const response = await fetch("/api/sales", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(item.payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        return { ok: response.ok, status: response.status, error: typeof data.error === "string" ? data.error : undefined };
+      });
+      setQueueStatus({ queued: result.queued, needsReview: result.needsReview });
+      if (result.synced) await loadSummary();
+    } catch {
+      const items = await browserSaleQueue.list().catch(() => []);
+      setQueueStatus({
+        queued: items.filter((item) => item.status !== "needs-review").length,
+        needsReview: items.filter((item) => item.status === "needs-review").length,
+      });
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
+      if (syncAgainRef.current) {
+        syncAgainRef.current = false;
+        void syncQueue();
+      }
+    }
+  }
+
   useEffect(() => {
-    const savedPayment = localStorage.getItem("quick_payment") as "cash" | "transfer" | null;
-    if (savedPayment) queueMicrotask(() => setPayment(savedPayment));
+    const savedPayment = localStorage.getItem("quick_payment") as Payment | null;
+    if (savedPayment && PAYMENTS.some((item) => item.value === savedPayment)) queueMicrotask(() => setPayment(savedPayment));
     fetch("/api/fuel-types")
-      .then((r) => r.json())
+      .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: FuelType[]) => {
         setFuelTypes(data);
-        const savedFuelId = localStorage.getItem("quick_fuelId");
-        const match = savedFuelId && data.find((f) => String(f.id) === savedFuelId);
-        setFuelId(match ? savedFuelId! : data.length > 0 ? String(data[0].id) : "");
+        const savedId = localStorage.getItem("quick_fuelId");
+        setFuelId(savedId && data.some((fuel) => String(fuel.id) === savedId) ? savedId : String(data[0]?.id ?? ""));
       })
-      .catch(() => {});
-    loadSummary(today, setSummary);
-    const context = { today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing };
-    void syncBrowserSales(context);
-    const handleOnline = () => void syncBrowserSales(context);
+      .catch(() => setFuelTypes([]));
+    queueMicrotask(() => {
+      void loadSummary();
+      void syncQueue();
+    });
+    const handleOnline = () => void syncQueue();
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
+    // Stable for the lifetime of this page; online retries use the same IndexedDB queue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today]);
 
-  const ft = fuelTypes.find((f) => String(f.id) === fuelId);
-  const liters = ft && ft.currentPrice > 0 && amount > 0 ? amount / ft.currentPrice : 0;
+  const fuel = fuelTypes.find((item) => String(item.id) === fuelId);
+  const liters = fuel && fuel.currentPrice > 0 ? amount / fuel.currentPrice : 0;
 
-  async function save() {
-    if (amount <= 0 || !ft || ft.currentPrice <= 0) return;
-    const seller = localStorage.getItem("fuel_last_seller") ?? "N";
-    const d = new Date();
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  function resetForm() {
+    setAmount(0);
+    setNote("");
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!fuel || amount <= 0 || fuel.currentPrice <= 0) return;
+    const now = new Date();
     const clientRequestId = crypto.randomUUID();
     const item: PendingSale = {
       id: clientRequestId,
-      createdAt: new Date().toISOString(),
+      createdAt: now.toISOString(),
       status: "queued",
       attempts: 0,
       payload: {
         clientRequestId,
-        date: dateStr,
-        sellerName: seller,
+        date: `${localDateKey()}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`,
+        sellerName: localStorage.getItem("fuel_last_seller") ?? "N",
         fuelTypeId: fuelId,
         pumpNo: "หัวจ่าย 1",
         totalAmount: String(amount),
-        pricePerLiter: String(ft.currentPrice),
+        pricePerLiter: String(fuel.currentPrice),
         paymentMethod: payment,
         customerName: "",
+        note,
       },
     };
     setSaving(true);
     try {
       await browserSaleQueue.put(item);
-      const savedL = liters;
-      setAmount(0);
       setQueueStatus((current) => ({ ...current, queued: current.queued + 1 }));
-      if (flashTimer.current) clearTimeout(flashTimer.current);
-      setFlash({ liters: savedL, total: amount });
-      flashTimer.current = setTimeout(() => setFlash(null), 1800);
-      void syncBrowserSales({ today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing });
+      setMessage(`เก็บรายการ ${fmt(amount)} บาทแล้ว`);
+      resetForm();
+      if (messageTimer.current) clearTimeout(messageTimer.current);
+      messageTimer.current = setTimeout(() => setMessage(""), 2200);
+      void syncQueue();
     } catch {
-      alert("เก็บรายการลงเครื่องไม่ได้ ยอดเงินยังอยู่ กรุณาลองอีกครั้ง");
+      setMessage("เก็บรายการไม่สำเร็จ ยอดเงินยังอยู่ กรุณาลองอีกครั้ง");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
-        <button onClick={() => router.push("/dashboard")} className="text-gray-500 text-xl w-8">←</button>
-        <h1 className="text-base font-bold text-gray-900">บันทึกขายด่วน</h1>
-        {summary !== null && (
-          <p className="text-sm font-bold text-blue-600">{fmtInt(summary.totalRevenue)} ฿</p>
-        )}
-      </div>
+    <div className="quick-sale min-h-dvh bg-slate-50 text-slate-950">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-lg items-center justify-between">
+          <Link href="/dashboard" className="grid min-h-12 min-w-12 place-items-center rounded-xl text-2xl" aria-label="กลับหน้าหลัก">←</Link>
+          <div className="text-center">
+            <h1 className="text-lg font-extrabold">บันทึกการขาย</h1>
+            <p className="text-xs text-slate-500">เลือกน้ำมัน → จำนวนเงิน → ชำระเงิน</p>
+          </div>
+          <button type="button" onClick={resetForm} className="min-h-12 min-w-12 rounded-xl text-sm font-semibold text-blue-600">ล้าง</button>
+        </div>
+      </header>
 
-      <div className="flex-1 max-w-lg mx-auto w-full p-4 space-y-3">
-
+      <main className="mx-auto max-w-lg px-4 pb-32 pt-5">
         {(queueStatus.queued > 0 || queueStatus.needsReview > 0 || syncing) && (
-          <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${queueStatus.needsReview > 0 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-bold">{syncing ? "กำลังส่งข้อมูล…" : queueStatus.queued > 0 ? `รอส่ง ${queueStatus.queued} รายการ` : `ต้องตรวจ ${queueStatus.needsReview} รายการ`}</p>
-                {queueStatus.needsReview > 0 && <p className="text-xs mt-0.5">ข้อมูลบางรายการไม่ผ่าน กรุณาให้เจ้าของตรวจ</p>}
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900" role="status">
+            <span className="font-semibold">{syncing ? "กำลังส่งข้อมูล…" : queueStatus.needsReview ? `ต้องตรวจ ${queueStatus.needsReview} รายการ` : `รอส่ง ${queueStatus.queued} รายการ`}</span>
+            {!syncing && queueStatus.queued > 0 && <button type="button" className="min-h-12 font-bold text-blue-700" onClick={() => void syncQueue()}>ส่งอีกครั้ง</button>}
+          </div>
+        )}
+
+        <form onSubmit={save} className="space-y-6">
+          <fieldset>
+            <legend className="mb-3 text-base font-extrabold">เลือกประเภทน้ำมัน</legend>
+            {fuelTypes.length === 0 ? <div className="h-24 animate-pulse rounded-xl bg-slate-200" aria-label="กำลังโหลดชนิดน้ำมัน" /> : (
+              <div className="grid grid-cols-4 gap-2">
+                {fuelTypes.map((item, index) => {
+                  const selected = fuelId === String(item.id);
+                  const selectedColors = ["border-emerald-500 bg-emerald-500", "border-blue-600 bg-blue-600", "border-orange-500 bg-orange-500", "border-slate-700 bg-slate-700"];
+                  return <label key={item.id} className={`grid min-h-24 cursor-pointer place-items-center rounded-xl border-2 p-2 text-center transition ${selected ? `${selectedColors[index % 4]} text-white shadow-sm` : "border-slate-200 bg-white text-slate-700"}`}>
+                    <input className="sr-only" type="radio" name="fuel" value={item.id} checked={selected} onChange={() => { setFuelId(String(item.id)); localStorage.setItem("quick_fuelId", String(item.id)); }} />
+                    <span aria-hidden="true" className="text-xl">⛽</span>
+                    <span className="text-sm font-extrabold leading-tight">{item.label}</span>
+                    <span className={`text-[11px] ${selected ? "text-white/80" : "text-slate-500"}`}>{fmt(item.currentPrice, 2)} ฿/L</span>
+                  </label>;
+                })}
               </div>
-              {queueStatus.queued > 0 && !syncing && <button type="button" onClick={() => void syncBrowserSales({ today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing })} className="min-h-11 rounded-lg bg-blue-600 px-3 font-bold text-white">ส่งอีกครั้ง</button>}
+            )}
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-3 text-base font-extrabold">จำนวนเงิน</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {PRESETS.map((preset) => <button key={preset} type="button" onClick={() => setAmount(preset)} aria-pressed={amount === preset} className={`min-h-14 rounded-xl border text-lg font-extrabold transition active:scale-[.98] ${amount === preset ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-slate-100 text-slate-900"}`}>{fmt(preset)}</button>)}
             </div>
-          </div>
-        )}
-
-        {/* Fuel tabs */}
-        <div className="flex gap-2">
-          {fuelTypes.map((f) => (
-            <button key={f.id} onClick={() => { const id = String(f.id); setFuelId(id); localStorage.setItem("quick_fuelId", id); setAmount(0); }}
-              className={`flex-1 py-3 rounded-2xl font-bold text-sm transition-all ${fuelId === String(f.id) ? "bg-blue-600 text-white shadow-md" : "bg-white text-gray-600 border-2 border-gray-200"}`}>
-              {f.label}
-              {f.currentPrice > 0 && <span className={`block text-xs font-normal mt-0.5 ${fuelId === String(f.id) ? "text-blue-200" : "text-gray-400"}`}>{fmtDec(f.currentPrice)} ฿/L</span>}
-            </button>
-          ))}
-          {/* Payment toggle */}
-          <div className="flex flex-col gap-1">
-            <button onClick={() => { setPayment("cash"); localStorage.setItem("quick_payment", "cash"); }}
-              className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-all ${payment === "cash" ? "bg-green-500 text-white" : "bg-white text-gray-500 border-2 border-gray-200"}`}>
-              สด
-            </button>
-            <button onClick={() => { setPayment("transfer"); localStorage.setItem("quick_payment", "transfer"); }}
-              className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-all ${payment === "transfer" ? "bg-blue-500 text-white" : "bg-white text-gray-500 border-2 border-gray-200"}`}>
-              โอน
-            </button>
-          </div>
-        </div>
-
-        {/* Preset amounts */}
-        <div className="grid grid-cols-3 gap-2">
-          {PRESETS.map((amt) => (
-            <button key={amt} onClick={() => setAmount(amt)}
-              className={`py-4 rounded-2xl font-bold text-lg transition-all active:scale-95 ${amount === amt ? "bg-blue-600 text-white shadow-md ring-2 ring-blue-300" : "bg-white text-gray-700 border-2 border-gray-200"}`}>
-              {amt}
-            </button>
-          ))}
-        </div>
-
-        {/* Current amount display */}
-        <div className="bg-white rounded-2xl px-4 py-3 text-center">
-          <p className="text-4xl font-bold text-gray-800">{amount > 0 ? fmtInt(amount) : <span className="text-gray-300">0</span>}
-            <span className="text-lg font-normal text-gray-400 ml-1">บาท</span>
-          </p>
-          {liters > 0 && <p className="text-sm text-gray-400 mt-0.5">= {fmtDec(liters)} ลิตร</p>}
-        </div>
-
-        {/* Adjust buttons */}
-        <div className="grid grid-cols-6 gap-1.5">
-          {ADJUSTS.map((adj) => (
-            <button key={adj} onClick={() => setAmount((a) => Math.max(0, a + adj))}
-              className={`py-2.5 rounded-xl font-bold text-xs transition-all active:scale-95 ${adj < 0 ? "bg-red-50 text-red-500 hover:bg-red-100" : "bg-green-50 text-green-600 hover:bg-green-100"}`}>
-              {adj > 0 ? `+${adj}` : adj}
-            </button>
-          ))}
-        </div>
-
-        {/* Submit */}
-        <button onClick={save} disabled={saving || amount <= 0}
-          className={`w-full py-5 rounded-2xl font-bold text-xl transition-all active:scale-95 ${amount > 0 ? "bg-blue-600 text-white hover:bg-blue-700 shadow-lg" : "bg-gray-100 text-gray-300"} disabled:opacity-60`}>
-          {saving ? "กำลังเก็บลงเครื่อง…" : amount > 0 ? `บันทึก ${fmtInt(amount)} บาท` : "เลือกยอดเงิน"}
-        </button>
-
-        {/* Flash feedback */}
-        {flash && (
-          <div className="bg-green-500 text-white rounded-2xl px-4 py-3 text-center animate-pulse">
-            <p className="font-bold text-lg">✓ เก็บในเครื่องแล้ว {fmtInt(flash.total)} บาท</p>
-            <p className="text-sm text-green-100">{fmtDec(flash.liters)} ลิตร · {payment === "cash" ? "เงินสด" : "โอน"}</p>
-          </div>
-        )}
-
-        {/* Summary hero card */}
-        {summary && (
-          <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-3xl p-5 text-white shadow-lg">
-            <p className="text-blue-200 text-xs font-medium">ยอดขายรวมวันนี้</p>
-            <p className="text-3xl font-bold mt-0.5">
-              {fmtInt(summary.totalRevenue)}
-              <span className="text-lg font-normal text-blue-200 ml-1">บาท</span>
-            </p>
-            <div className="flex gap-4 mt-3 pt-3 border-t border-blue-500/50 flex-wrap">
-              <div>
-                <p className="text-blue-200 text-xs">น้ำมัน</p>
-                <p className="text-sm font-bold">{fmtInt(summary.fuelRevenue)} ฿</p>
-              </div>
-              {summary.productRevenue > 0 && (
-                <div>
-                  <p className="text-blue-200 text-xs">สินค้า</p>
-                  <p className="text-sm font-bold">{fmtInt(summary.productRevenue)} ฿</p>
-                </div>
-              )}
-              <div>
-                <p className="text-blue-200 text-xs">ลิตรรวม</p>
-                <p className="text-sm font-bold">{fmtDec(summary.totalLiters)} L</p>
-              </div>
-              {summary.productCount > 0 && (
-                <div>
-                  <p className="text-blue-200 text-xs">สินค้าเสริม</p>
-                  <p className="text-sm font-bold">{fmtInt(summary.productCount)} ชิ้น</p>
-                </div>
-              )}
+            <label htmlFor="sale-amount" className="sr-only">จำนวนเงินที่ต้องการ</label>
+            <div className="mt-3 flex min-h-20 items-center rounded-xl border-2 border-slate-200 bg-white px-4 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-100">
+              <span className="text-2xl font-bold">฿</span>
+              <input id="sale-amount" name="amount" inputMode="decimal" value={amount || ""} onChange={(event) => setAmount(Math.max(0, Number(event.target.value) || 0))} placeholder="0.00" className="min-w-0 flex-1 bg-transparent px-3 text-4xl font-extrabold outline-none placeholder:text-slate-300" />
+              {amount > 0 && <button type="button" onClick={() => setAmount(0)} className="min-h-12 min-w-12 rounded-full text-slate-400" aria-label="ล้างจำนวนเงิน">×</button>}
             </div>
-          </div>
-        )}
+            {liters > 0 && <p className="mt-2 text-sm text-slate-500">ประมาณ {fmt(liters, 2)} ลิตร · {fmt(fuel?.currentPrice ?? 0, 2)} บาท/ลิตร</p>}
+          </fieldset>
 
-        {/* Payment breakdown */}
-        {summary && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm space-y-4">
-            {[
-              { title: "⛽ น้ำมัน", data: summary.fuelByPayment, total: summary.fuelRevenue },
-              ...(summary.productRevenue > 0 ? [{ title: "🛒 สินค้า", data: summary.productByPayment, total: summary.productRevenue }] : []),
-            ].map(({ title, data, total }) => (
-              <div key={title}>
-                <div className="flex justify-between items-baseline mb-2">
-                  <p className="text-sm font-bold text-gray-700">{title}</p>
-                  <p className="text-xs text-gray-400">{fmtInt(total)} บาท</p>
-                </div>
-                <div className="space-y-1.5">
-                  {(["cash", "transfer", "credit"] as const).map((k) => {
-                    const val = data?.[k] ?? 0;
-                    const pct = total > 0 ? (val / total) * 100 : 0;
-                    return (
-                      <div key={k}>
-                        <div className="flex justify-between mb-0.5">
-                          <span className="text-gray-500 text-xs">{PAYMENT_LABEL[k]}</span>
-                          <span className="font-bold text-gray-800 text-xs">{fmtInt(val)} ฿</span>
-                        </div>
-                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${PAYMENT_COLOR[k]}`} style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          <fieldset>
+            <legend className="mb-3 text-base font-extrabold">วิธีการชำระเงิน</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {PAYMENTS.map((item) => <label key={item.value} className={`grid min-h-20 cursor-pointer place-items-center rounded-xl border-2 p-2 text-center ${payment === item.value ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700"}`}>
+                <input className="sr-only" type="radio" name="payment" value={item.value} checked={payment === item.value} onChange={() => { setPayment(item.value); localStorage.setItem("quick_payment", item.value); }} />
+                <span className="text-xl font-black" aria-hidden="true">{item.icon}</span><span className="text-sm font-bold">{item.label}</span>
+              </label>)}
+            </div>
+          </fieldset>
+
+          <div>
+            <label htmlFor="sale-note" className="mb-2 block text-base font-extrabold">หมายเหตุ <span className="font-normal text-slate-400">(ถ้ามี)</span></label>
+            <textarea id="sale-note" name="note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={100} rows={2} placeholder="เช่น ทะเบียนรถ, ลูกค้าองค์กร" className="w-full resize-y rounded-xl border-2 border-slate-200 bg-white p-3 text-base outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100" />
           </div>
-        )}
-      </div>
+
+          <button type="submit" disabled={saving || !fuel || amount <= 0} className="min-h-16 w-full rounded-xl bg-blue-600 px-5 text-lg font-extrabold text-white shadow-sm transition hover:bg-blue-700 active:scale-[.99] disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">
+            {saving ? "กำลังเก็บลงเครื่อง…" : amount > 0 ? `บันทึกการขาย ฿${fmt(amount)}` : "เลือกจำนวนเงินก่อน"}
+          </button>
+        </form>
+
+        <p className="mt-4 text-center text-xs text-slate-400">ยอดขายวันนี้ {todayRevenue === null ? "กำลังโหลด…" : `฿${fmt(todayRevenue)}`}</p>
+        <div className="sr-only" aria-live="polite">{message}</div>
+        {message && <div className="fixed inset-x-4 bottom-24 z-30 mx-auto max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white shadow-lg">✓ {message}</div>}
+      </main>
+
+      <nav aria-label="เมนูหลัก" className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <div className="mx-auto grid max-w-lg grid-cols-5">
+          {[{ href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "▣", label: "สต็อก" }, { href: "/dashboard", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "⚙", label: "ตั้งค่า" }].map((item) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={item.label === "ขาย" ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-semibold ${item.label === "ขาย" ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
+        </div>
+      </nav>
     </div>
   );
 }
