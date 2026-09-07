@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type Summary = {
   totalRevenue: number;
@@ -16,6 +17,7 @@ type Summary = {
 type Stock = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type Sale = { id: number; date: string; totalAmount: number; paymentMethod: string; pumpNo: string; fuelType: { name: string; label: string } };
 type Meter = { id: number; meterEnd: number | null; fuelType: { name: string; label: string } };
+type Account = { name: string; email: string; avatarUrl: string; role: string };
 
 const NAV = [
   { href: "/dashboard", icon: "⌂", label: "ภาพรวม" },
@@ -56,6 +58,23 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [account, setAccount] = useState<Account>({ name: "บัญชีผู้ใช้", email: "", avatarUrl: "", role: "ผู้ใช้งาน" });
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const metadata = user.user_metadata ?? {};
+      const rawRole = user.app_metadata?.role;
+      const role = rawRole === "owner" ? "เจ้าของ" : rawRole === "manager" ? "ผู้จัดการ" : rawRole === "staff" ? "พนักงาน" : "ผู้ใช้งาน";
+      setAccount({
+        name: metadata.full_name || metadata.name || user.email?.split("@")[0] || "บัญชีผู้ใช้",
+        email: user.email ?? "",
+        avatarUrl: metadata.avatar_url || metadata.picture || "",
+        role,
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -96,7 +115,16 @@ export default function DashboardPage() {
         <div className="border-t border-slate-200 p-4">
           <p className="px-3 pb-1 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">System</p>
           <Link href="/settings" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600"><span aria-hidden="true">⚙</span> ตั้งค่า</Link>
-          <form action="/auth/signout" method="post"><button className="min-h-12 w-full rounded-xl px-3 text-left text-sm font-bold text-red-600" type="submit">↪ ออกจากระบบ</button></form>
+          <Link href="/help" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600 hover:bg-slate-50"><span aria-hidden="true">?</span> ช่วยเหลือ</Link>
+          <div className="my-3 border-t border-slate-200" />
+          <div className="flex items-center gap-3 px-3 py-2">
+            {account.avatarUrl ? <img src={account.avatarUrl} alt="" referrerPolicy="no-referrer" className="size-10 rounded-full object-cover" /> : <span className="grid size-10 shrink-0 place-items-center rounded-full bg-blue-100 font-black text-blue-700" aria-hidden="true">{account.name.slice(0, 1).toUpperCase()}</span>}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-slate-800">{account.name}</p>
+              <p className="truncate text-xs text-slate-500" title={account.email}>{account.role}</p>
+            </div>
+          </div>
+          <form action="/auth/signout" method="post"><button className="min-h-12 w-full rounded-xl px-3 text-left text-sm font-bold text-red-600 hover:bg-red-50" type="submit">↪ ออกจากระบบ</button></form>
         </div>
       </aside>
 
