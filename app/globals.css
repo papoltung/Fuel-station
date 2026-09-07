@@ -12,15 +12,27 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.dashboard { color-scheme: light; font-variant-numeric: tabular-nums; }
+.dashboard button { cursor: pointer; min-height: 44px; }
+.dashboard button:disabled { cursor: not-allowed; }
+.dashboard :is(button, input, a):focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+.dashboard .text-gray-400 { color: #64748b; }
+.dashboard-workspace { max-width: 1280px; margin-inline: auto; }
+.dashboard-report { width: 100%; min-width: 0; }
+.dashboard-sale { min-width: 0; }
+@media (min-width: 1024px) {
+  .dashboard-workspace { display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); align-items: start; gap: 24px; padding: 24px; }
+  .dashboard-sale { position: sticky; top: 140px; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; }
+  .dashboard-report { max-width: none; padding: 0; }
+  .dashboard-report:only-child { grid-column: 1 / -1; max-width: 900px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dashboard *, .dashboard *::before, .dashboard *::after { animation: none !important; transition: none !important; }
 }

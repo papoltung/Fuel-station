@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { parseSaleInput } from "@/lib/sale-input";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -23,53 +25,59 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const { sellerName, fuelTypeId, pumpNo, pricePerLiter, paymentMethod, customerName, note, date, totalAmount: rawTotal, meterStart, meterEnd } = body;
-
-  const price = Number(pricePerLiter);
-  if (!price || price <= 0) return NextResponse.json({ error: "ราคาต่อลิตรไม่ถูกต้อง" }, { status: 400 });
-
-  let liters: number;
-  let totalAmount: number;
-
-  if (rawTotal !== undefined && rawTotal !== "") {
-    totalAmount = Number(rawTotal);
-    liters = totalAmount / price;
-  } else if (meterStart !== undefined && meterEnd !== undefined) {
-    liters = Number(meterEnd) - Number(meterStart);
-    totalAmount = liters * price;
-    if (liters <= 0) return NextResponse.json({ error: "มิเตอร์ปิดต้องมากกว่าเริ่ม" }, { status: 400 });
-  } else {
-    return NextResponse.json({ error: "กรอกยอดเงินหรือเลขมิเตอร์" }, { status: 400 });
+  let input: ReturnType<typeof parseSaleInput>;
+  try {
+    input = parseSaleInput(await req.json());
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
   }
 
-  const ftId = Number(fuelTypeId);
-
-  const sale = await prisma.$transaction(async (tx) => {
-    const s = await tx.sale.create({
-      data: {
-        date: date ? new Date(date) : new Date(),
-        sellerName,
-        fuelTypeId: ftId,
-        pumpNo,
-        meterStart: meterStart ? Number(meterStart) : null,
-        meterEnd: meterEnd ? Number(meterEnd) : null,
-        liters,
-        pricePerLiter: price,
-        totalAmount,
-        paymentMethod,
-        customerName: customerName || null,
-        note: note || null,
-      },
-      include: { fuelType: true },
+  try {
+    const sale = await prisma.$transaction(async (tx) => {
+      const created = await tx.sale.create({
+        data: {
+          clientRequestId: input.clientRequestId,
+          date: input.date ? new Date(input.date) : new Date(),
+          sellerName: input.sellerName,
+          fuelTypeId: input.fuelTypeId,
+          pumpNo: input.pumpNo,
+          meterStart: input.meterStart,
+          meterEnd: input.meterEnd,
+          liters: input.liters,
+          pricePerLiter: input.pricePerLiter,
+          totalAmount: input.totalAmount,
+          paymentMethod: input.paymentMethod,
+          customerName: input.customerName,
+          note: input.note,
+        },
+        include: { fuelType: true },
+      });
+      await tx.fuelStock.upsert({
+        where: { fuelTypeId: input.fuelTypeId },
+        create: { fuelTypeId: input.fuelTypeId, currentLiters: -input.liters },
+        update: { currentLiters: { decrement: input.liters } },
+      });
+      return created;
     });
-    await tx.fuelStock.upsert({
-      where: { fuelTypeId: ftId },
-      create: { fuelTypeId: ftId, currentLiters: -liters },
-      update: { currentLiters: { decrement: liters } },
-    });
-    return s;
-  });
-
-  return NextResponse.json(sale, { status: 201 });
+    return NextResponse.json(sale, { status: 201 });
+  } catch (error) {
+    if (input.clientRequestId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const existing = await prisma.sale.findUnique({
+        where: { clientRequestId: input.clientRequestId },
+        include: { fuelType: true },
+      });
+      const sameRequest = existing
+        && existing.fuelTypeId === input.fuelTypeId
+        && existing.sellerName === input.sellerName
+        && existing.pumpNo === input.pumpNo
+        && existing.pricePerLiter === input.pricePerLiter
+        && existing.totalAmount === input.totalAmount
+        && existing.paymentMethod === input.paymentMethod
+        && existing.customerName === input.customerName;
+      if (sameRequest) return NextResponse.json(existing, { status: 200, headers: { "Idempotent-Replay": "true" } });
+      return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
+    }
+    console.error("sales POST error:", error);
+    return NextResponse.json({ error: "บันทึกไม่สำเร็จ" }, { status: 500 });
+  }
 }

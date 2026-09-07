@@ -7,7 +7,6 @@ import PinModal from "@/components/PinModal";
 type StockItem = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type FuelType = { id: number; name: string; label: string; currentPrice: number };
 type MeterPeriod = { id: number; meterStart: number; meterEnd: number | null; liters: number | null; fuelType: { name: string; label: string } };
-type SaleOrder = { id: number; createdAt: string; fuelTypeId: number; fuelType: { name: string; label: string }; pumpNo: string; totalAmount: number; pricePerLiter: number; paymentMethod: string; sellerName: string; customerName: string | null };
 
 type Summary = {
   date: string;
@@ -80,42 +79,44 @@ export default function DashboardPage() {
   const [quickAmount, setQuickAmount] = useState<number>(0);
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickDone, setQuickDone] = useState(false);
-  const [orders, setOrders] = useState<SaleOrder[]>([]);
-  const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
   const [profitUnlocked, setProfitUnlocked] = useState(false);
   const [showPinModal, setShowPinModal] = useState(false);
 
   const LOW_THRESHOLD = 1000;
-
-  function loadOrders() {
-    fetch("/api/sale-orders").then((r) => r.json()).then(setOrders).catch(() => {});
-  }
 
   useEffect(() => {
     fetch("/api/fuel-types").then((r) => r.json()).then((data: FuelType[]) => {
       setFuelTypes(data);
       if (data.length > 0) setQuickFuelId(String(data[0].id));
     }).catch(() => {});
-    loadOrders();
   }, []);
 
   useEffect(() => {
-    setLoading(true);
+    const controller = new AbortController();
+    const read = async (url: string) => {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง");
+      return response.json();
+    };
     Promise.all([
-      fetch(`/api/sales/summary?date=${date}`).then((r) => r.json()).catch(() => null),
-      fetch(`/api/sales?date=${date}`).then((r) => r.json()).catch(() => []),
-      fetch(`/api/product-sales?date=${date}`).then((r) => r.json()).catch(() => []),
-      fetch("/api/fuel-stock").then((r) => r.json()).catch(() => []),
-      fetch(`/api/meter-periods?date=${date}`).then((r) => r.json()).catch(() => []),
+      read(`/api/sales/summary?date=${date}`),
+      read(`/api/sales?date=${date}`),
+      read(`/api/product-sales?date=${date}`),
+      read("/api/fuel-stock"),
+      read(`/api/meter-periods?date=${date}`),
     ]).then(([s, sl, psl, stk, mp]) => {
       setSummary(Array.isArray(s) ? null : s);
       setSales(Array.isArray(sl) ? sl : []);
       setProductSales(Array.isArray(psl) ? psl : []);
       setStocks(Array.isArray(stk) ? stk : []);
       setMeters(Array.isArray(mp) ? mp : []);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [date]);
+    }).catch(() => {
+      if (!controller.signal.aborted) setError("โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง");
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [date, revision]);
 
   async function deleteSale(id: number, amount: number) {
     if (!confirm(`ลบรายการ ${amount.toLocaleString("th-TH")} บาท?`)) return;
@@ -152,7 +153,7 @@ export default function DashboardPage() {
   }
 
   async function quickSave() {
-    if (quickAmount <= 0) return;
+    if (quickAmount <= 0 || quickSaving || date !== today) return;
     const ft = fuelTypes.find((f) => String(f.id) === quickFuelId);
     if (!ft) return;
     if (ft.currentPrice <= 0) { alert(`ยังไม่ได้ตั้งราคา ${ft.label} — ไปตั้งที่ Settings ก่อน`); return; }
@@ -190,9 +191,6 @@ export default function DashboardPage() {
         count: prev.count + 1,
       };
     });
-    setQuickDone(true);
-    setQuickAmount(0);
-    setTimeout(() => setQuickDone(false), 1200);
 
     setQuickSaving(true);
     try {
@@ -200,6 +198,7 @@ export default function DashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          clientRequestId: crypto.randomUUID(),
           date: dateStr, sellerName: seller, fuelTypeId: quickFuelId,
           pumpNo: "หัวจ่าย 1", totalAmount: String(amount),
           pricePerLiter: String(ft.currentPrice), paymentMethod: payment, customerName: "",
@@ -208,9 +207,15 @@ export default function DashboardPage() {
       if (!res.ok) {
         // rollback on failure
         setSales((prev) => prev.filter((s) => s.id !== tempId));
+        alert("บันทึกไม่สำเร็จ ยอดเงินยังอยู่ กรุณาลองอีกครั้ง");
+      } else {
+        setQuickDone(true);
+        setQuickAmount(0);
+        setTimeout(() => setQuickDone(false), 1200);
       }
       refreshDay(); // reconcile with server
     } catch {
+      alert("ไม่ได้รับการยืนยัน กรุณาตรวจสอบรายการขายก่อนลองใหม่เพื่อป้องกันรายการซ้ำ");
       setSales((prev) => prev.filter((s) => s.id !== tempId));
       refreshDay();
     } finally {
@@ -218,19 +223,18 @@ export default function DashboardPage() {
     }
   }
 
-  const paymentTotal = summary ? Object.values(summary.byPayment).reduce((a, b) => a + b, 0) : 0;
   const fuelEntries = summary ? Object.entries(summary.byFuel) : [];
   const maxFuelRevenue = fuelEntries.length > 0 ? Math.max(...fuelEntries.map(([, v]) => v.revenue)) : 1;
 
   return (
     <>
-    <div className="min-h-screen bg-slate-100">
+    <div className="dashboard min-h-screen bg-slate-100">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className="text-base font-bold text-gray-900">ปั๊มน้ำมัน</h1>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            <h1 className="text-base font-bold text-gray-900">ภาพรวมสถานี</h1>
+            <input aria-label="วันที่รายงาน" disabled={quickSaving} type="date" value={date} onChange={(e) => { if (e.target.value && e.target.value !== date) { setLoading(true); setError(null); setDate(e.target.value); } }}
               className="text-xs text-gray-400 bg-transparent focus:outline-none cursor-pointer" />
           </div>
           <div className="flex gap-2">
@@ -248,10 +252,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <div className="dashboard-workspace">
       {/* Quick sale */}
-      {fuelTypes.length > 0 && (
-        <div className="bg-white border-b border-gray-100 px-4 py-4">
+      {fuelTypes.length > 0 && date === today && (
+        <div className="dashboard-sale bg-white border-b border-gray-100 px-4 py-4">
           <div className="max-w-2xl mx-auto space-y-3">
+            <div><h2 className="font-bold text-gray-900">บันทึกขายด่วน</h2><p className="text-sm text-gray-500">เลือกน้ำมัน · ยอดเงิน · บันทึก</p></div>
+            <fieldset disabled={quickSaving} className="space-y-3 disabled:opacity-60">
 
             {/* Fuel type + payment */}
             <div className="flex gap-2 items-center">
@@ -309,25 +316,28 @@ export default function DashboardPage() {
             </div>
 
             {/* Save button */}
-            <button type="button" onClick={quickSave} disabled={quickDone || quickAmount <= 0}
+            <button type="button" onClick={quickSave} disabled={quickSaving || quickDone || quickAmount <= 0}
               className={`w-full py-4 rounded-2xl font-bold text-lg transition-all active:scale-95
                 ${quickDone ? "bg-green-500 text-white" : quickAmount > 0 ? "bg-green-600 text-white hover:bg-green-700 shadow-sm" : "bg-gray-100 text-gray-400"}`}>
-              {quickDone ? "✓ บันทึกแล้ว" : quickAmount > 0 ? `บันทึก ${quickAmount.toLocaleString("th-TH")} บาท` : "เลือกยอดเงิน"}
+              {quickSaving ? "กำลังบันทึก…" : quickDone ? "✓ บันทึกแล้ว" : quickAmount > 0 ? `บันทึก ${quickAmount.toLocaleString("th-TH")} บาท` : "เลือกยอดเงิน"}
             </button>
+            </fieldset>
 
           </div>
         </div>
       )}
 
 
-      <div className="max-w-2xl mx-auto p-4 space-y-4">
+      <div className="dashboard-report max-w-2xl mx-auto p-4 space-y-4">
         {loading ? (
-          <div className="text-center py-20 text-gray-300 text-4xl animate-pulse">...</div>
+          <div role="status" aria-label="กำลังโหลดรายงาน" className="space-y-4 motion-safe:animate-pulse"><div className="h-44 rounded-2xl bg-slate-200" /><div className="h-32 rounded-2xl bg-slate-200" /><p className="text-sm text-slate-600">กำลังโหลดรายงาน…</p></div>
+        ) : error ? (
+          <div role="alert" className="rounded-xl border border-red-200 bg-white p-6"><p className="text-red-700">{error}</p><button className="mt-4 rounded-lg bg-blue-600 px-4 py-3 text-white" onClick={() => { setLoading(true); setError(null); setRevision((n) => n + 1); }}>ลองอีกครั้ง</button></div>
         ) : (
           <>
             {/* Hero card */}
             <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-3xl p-6 text-white shadow-lg">
-              <p className="text-blue-200 text-sm font-medium">ยอดขายรวมวันนี้</p>
+              <p className="text-blue-200 text-sm font-medium">{date === today ? "ยอดขายรวมวันนี้" : `ยอดขายรวม · ${date}`}</p>
               <p className="text-4xl font-bold mt-1">
                 {fmtInt(summary?.totalRevenue ?? 0)}
                 <span className="text-xl font-normal text-blue-200 ml-1">บาท</span>
@@ -354,7 +364,7 @@ export default function DashboardPage() {
                   </div>
                 )}
                 {date !== today && (
-                  <button onClick={() => setDate(today)} className="ml-auto self-end text-blue-200 text-xs underline">วันนี้</button>
+                  <button onClick={() => { setLoading(true); setDate(today); }} className="ml-auto self-end text-blue-200 text-xs underline">วันนี้</button>
                 )}
               </div>
             </div>
@@ -626,6 +636,7 @@ export default function DashboardPage() {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
     {showPinModal && (
