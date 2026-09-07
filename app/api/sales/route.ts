@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isSameSaleRequest, parseSaleInput } from "@/lib/sale-input";
 import { requireRole } from "@/lib/authz";
+import { saleSnapshot } from "@/lib/sale-audit";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
         create: { fuelTypeId: input.fuelTypeId, currentLiters: -input.liters },
         update: { currentLiters: { decrement: input.liters } },
       });
+      await tx.saleAudit.create({ data: { saleId: created.id, action: "create", actorId: auth.user.id, actorName: auth.user.name, actorEmail: auth.user.email, afterData: saleSnapshot(created) } });
       return created;
     });
     return NextResponse.json(sale, { status: 201 });

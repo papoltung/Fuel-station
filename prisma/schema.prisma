@@ -20,6 +20,21 @@ model AppUser {
   lastSeenAt DateTime @default(now())
 }
 
+model SaleAudit {
+  id         Int      @id @default(autoincrement())
+  saleId     Int
+  action     String
+  actorId    Int
+  actorName  String
+  actorEmail String
+  beforeData Json?
+  afterData  Json?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([saleId, createdAt])
+}
+
 model FuelType {
   id           Int             @id @default(autoincrement())
   name         String          @unique

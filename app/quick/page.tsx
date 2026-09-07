@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { browserSaleQueue, syncPendingSales, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = {
   id: number;
@@ -32,6 +33,22 @@ const PAYMENT_OPTIONS = [
 const QUICK_AMOUNTS = [100, 200, 300, 500, 1000];
 type Account = { name: string; role: "owner" | "manager" | "staff" };
 
+let activeQueueSync: Promise<{ synced: number; queued: number; needsReview: number }> | null = null;
+
+function syncSaleQueue() {
+  if (activeQueueSync) return activeQueueSync;
+  activeQueueSync = syncPendingSales(browserSaleQueue, async (item: PendingSale) => {
+    const response = await fetch("/api/sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item.payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, error: data.error };
+  }).finally(() => { activeQueueSync = null; });
+  return activeQueueSync;
+}
+
 export default function NewSalePage() {
   const router = useRouter();
 
@@ -43,6 +60,9 @@ export default function NewSalePage() {
   const [success, setSuccess] = useState(false);
   const [successData, setSuccessData] = useState({ amount: 0, label: "" });
   const [account, setAccount] = useState<Account | null>(null);
+  const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
+  const [syncing, setSyncing] = useState(false);
+  const [queuedFlash, setQueuedFlash] = useState("");
 
   // product-shop UX
   const [productSearch, setProductSearch] = useState("");
@@ -115,6 +135,22 @@ export default function NewSalePage() {
       .catch(() => setError("โหลดข้อมูลสินค้าไม่สำเร็จ"));
 
     fetch("/api/me").then((response) => response.ok ? response.json() : null).then(setAccount);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshQueue = async () => {
+      setSyncing(true);
+      try {
+        const result = await syncSaleQueue();
+        if (mounted) setQueueStatus({ queued: result.queued, needsReview: result.needsReview });
+      } finally {
+        if (mounted) setSyncing(false);
+      }
+    };
+    void refreshQueue();
+    window.addEventListener("online", refreshQueue);
+    return () => { mounted = false; window.removeEventListener("online", refreshQueue); };
   }, []);
 
   useEffect(() => {
@@ -222,6 +258,35 @@ export default function NewSalePage() {
       !fuelForm.customerName.trim()
     )
       return setError("กรอกชื่อลูกค้าเครดิต");
+
+    // Persist first, clear the form immediately, then let the queue sync in the background.
+    try {
+      const id = crypto.randomUUID();
+      await browserSaleQueue.put({
+        id,
+        createdAt: new Date().toISOString(),
+        status: "queued",
+        attempts: 0,
+        payload: {
+          clientRequestId: id,
+          ...fuelForm,
+          pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
+          date: fuelForm.date + "+07:00",
+        },
+      });
+      setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${fuelAmount.toLocaleString("th-TH")} — เก็บเข้าคิวแล้ว`);
+      setQueueStatus((value) => ({ ...value, queued: value.queued + 1 }));
+      setFuelForm((form) => ({ ...form, date: nowDT(), totalAmount: "", customerName: "" }));
+      window.setTimeout(() => setQueuedFlash(""), 3500);
+      setSyncing(true);
+      void syncSaleQueue()
+        .then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview }))
+        .finally(() => setSyncing(false));
+      return;
+    } catch {
+      setError("อุปกรณ์นี้เก็บคิวขายไม่ได้ กรุณาลองใหม่");
+      return;
+    }
 
     setLoading(true);
 
@@ -408,6 +473,19 @@ export default function NewSalePage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
+        {(queuedFlash || queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
+          <div className={`mb-3 rounded-2xl border px-4 py-3 text-sm ${queueStatus.needsReview > 0 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">{queuedFlash || (syncing ? "กำลังส่งคิวขาย…" : `รอส่ง ${queueStatus.queued} รายการ`)}</p>
+                {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">มี {queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล</p>}
+              </div>
+              {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
+                <button type="button" disabled={syncing} onClick={() => { setSyncing(true); void syncSaleQueue().then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
+              )}
+            </div>
+          </div>
+        )}
         {account && <div className="mb-3 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3"><span className="grid size-9 place-items-center rounded-full bg-blue-600 font-black text-white">{account.name.slice(0, 1).toUpperCase()}</span><div><p className="text-xs text-blue-600">ขายโดย</p><p className="font-bold text-slate-900">{account.name}<span className="ml-1 text-xs font-semibold text-slate-500">· {account.role === "owner" ? "เจ้าของ" : account.role === "manager" ? "ผู้จัดการ" : "พนักงาน"}</span></p></div></div>}
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1">
           <button

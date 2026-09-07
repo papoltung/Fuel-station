@@ -14,7 +14,7 @@ type Summary = {
   byPayment: Record<string, number>;
 };
 type Stock = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
-type Sale = { id: number; date: string; totalAmount: number; paymentMethod: string; pumpNo: string; fuelType: { name: string; label: string } };
+type Sale = { id: number; date: string; sellerName: string; totalAmount: number; paymentMethod: string; pumpNo: string; fuelType: { name: string; label: string } };
 type Meter = { id: number; meterEnd: number | null; fuelType: { name: string; label: string } };
 type Account = { name: string; email: string; avatarUrl: string; role: string };
 
@@ -58,10 +58,12 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [account, setAccount] = useState<Account>({ name: "บัญชีผู้ใช้", email: "", avatarUrl: "", role: "ผู้ใช้งาน" });
+  const [roleCode, setRoleCode] = useState("");
 
   useEffect(() => {
     fetch("/api/me").then((response) => response.ok ? response.json() : null).then((user) => {
       if (!user) return;
+      setRoleCode(user.role ?? "");
       const role = user.role === "owner" ? "เจ้าของ" : user.role === "manager" ? "ผู้จัดการ" : "พนักงาน";
       setAccount({
         name: user.name || user.email?.split("@")[0] || "บัญชีผู้ใช้",
@@ -171,7 +173,7 @@ export default function DashboardPage() {
 
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">การขายล่าสุด</h2><span className="text-sm text-slate-400">{sales.length} รายการ</span></div>
-            {sales.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">ยังไม่มีรายการขายในวันนี้</p> : <div className="divide-y divide-slate-100">{sales.slice(0, 6).map((sale) => { const style = FUEL_STYLE[sale.fuelType.name] ?? FUEL_STYLE.diesel; return <div key={sale.id} className="grid min-h-16 grid-cols-[3rem_1fr_auto] items-center gap-3"><time className="text-sm tabular-nums text-slate-500">{time(sale.date)}</time><div className="flex min-w-0 items-center gap-3"><span className={`size-3 shrink-0 rounded-full ${style.dot}`} /><div className="min-w-0"><p className="truncate font-bold">{sale.fuelType.label}</p><p className="text-xs text-slate-400">{sale.pumpNo}</p></div></div><div className="text-right"><p className="font-black tabular-nums">฿ {money(sale.totalAmount)}</p><span className={`inline-block rounded-lg px-2 py-0.5 text-xs font-bold ${style.soft}`}>{PAYMENT_LABEL[sale.paymentMethod] ?? sale.paymentMethod}</span></div></div>; })}</div>}
+            {sales.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">ยังไม่มีรายการขายในวันนี้</p> : <div className="divide-y divide-slate-100">{sales.slice(0, 6).map((sale) => { const style = FUEL_STYLE[sale.fuelType.name] ?? FUEL_STYLE.diesel; return <div key={sale.id} className="grid min-h-16 grid-cols-[3rem_1fr_auto] items-center gap-3"><time className="text-sm tabular-nums text-slate-500">{time(sale.date)}</time><div className="flex min-w-0 items-center gap-3"><span className={`size-3 shrink-0 rounded-full ${style.dot}`} /><div className="min-w-0"><p className="truncate font-bold">{sale.fuelType.label}</p><p className="text-xs text-slate-400">{sale.pumpNo} · ขายโดย {sale.sellerName}</p></div></div><div className="text-right"><p className="font-black tabular-nums">฿ {money(sale.totalAmount)}</p><span className={`inline-block rounded-lg px-2 py-0.5 text-xs font-bold ${style.soft}`}>{PAYMENT_LABEL[sale.paymentMethod] ?? sale.paymentMethod}</span>{(roleCode === "owner" || roleCode === "manager") && <Link href={`/sales/${sale.id}/edit`} className="ml-2 inline-block rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">แก้ไข</Link>}</div></div>; })}</div>}
           </section>
         </>}
       </main>
