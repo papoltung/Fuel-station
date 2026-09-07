@@ -8,6 +8,18 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model AppUser {
+  id         Int      @id @default(autoincrement())
+  authUserId String   @unique
+  email      String   @unique
+  name       String
+  avatarUrl  String?
+  role       String   @default("staff")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  lastSeenAt DateTime @default(now())
+}
+
 model FuelType {
   id           Int             @id @default(autoincrement())
   name         String          @unique

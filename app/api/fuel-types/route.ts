@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function GET() {
   const fuelTypes = await prisma.fuelType.findMany({ orderBy: { name: "asc" } });
@@ -7,6 +8,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     if (!Array.isArray(body.prices) || body.prices.length === 0 || body.prices.length > 20) return NextResponse.json({ error: "รายการราคาไม่ถูกต้อง" }, { status: 400 });

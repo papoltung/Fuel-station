@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 type Summary = {
   totalRevenue: number;
@@ -61,16 +60,13 @@ export default function DashboardPage() {
   const [account, setAccount] = useState<Account>({ name: "บัญชีผู้ใช้", email: "", avatarUrl: "", role: "ผู้ใช้งาน" });
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    fetch("/api/me").then((response) => response.ok ? response.json() : null).then((user) => {
       if (!user) return;
-      const metadata = user.user_metadata ?? {};
-      const rawRole = user.app_metadata?.role;
-      const role = rawRole === "owner" ? "เจ้าของ" : rawRole === "manager" ? "ผู้จัดการ" : rawRole === "staff" ? "พนักงาน" : "ผู้ใช้งาน";
+      const role = user.role === "owner" ? "เจ้าของ" : user.role === "manager" ? "ผู้จัดการ" : "พนักงาน";
       setAccount({
-        name: metadata.full_name || metadata.name || user.email?.split("@")[0] || "บัญชีผู้ใช้",
+        name: user.name || user.email?.split("@")[0] || "บัญชีผู้ใช้",
         email: user.email ?? "",
-        avatarUrl: metadata.avatar_url || metadata.picture || "",
+        avatarUrl: user.avatarUrl || "",
         role,
       });
     });

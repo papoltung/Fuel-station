@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const ftId = Number(id);
   try {
@@ -22,6 +25,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
   const { id } = await params;
   const body = await req.json();
   const { currentPrice } = body;
