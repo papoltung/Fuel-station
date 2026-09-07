@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { browserSaleQueue, syncPendingSales, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = { id: number; name: string; label: string; currentPrice: number };
 type Summary = {
@@ -21,12 +22,61 @@ const PAYMENT_COLOR: Record<string, string> = { cash: "bg-emerald-500", transfer
 
 function fmtInt(n: number) { return n.toLocaleString("th-TH", { maximumFractionDigits: 0 }); }
 function fmtDec(n: number) { return n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function localDateKey() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 function loadSummary(date: string, setSummary: (s: Summary) => void) {
   fetch(`/api/sales/summary?date=${date}`)
     .then((r) => r.json())
     .then((s) => { if (!Array.isArray(s)) setSummary(s); })
     .catch(() => {});
+}
+
+type QueueStatus = { queued: number; needsReview: number };
+type QueueSyncContext = {
+  today: string;
+  syncingRef: { current: boolean };
+  syncAgainRef: { current: boolean };
+  setSummary: (summary: Summary) => void;
+  setQueueStatus: (status: QueueStatus) => void;
+  setSyncing: (syncing: boolean) => void;
+};
+
+async function syncBrowserSales(context: QueueSyncContext) {
+  if (context.syncingRef.current) {
+    context.syncAgainRef.current = true;
+    return;
+  }
+  context.syncingRef.current = true;
+  context.setSyncing(true);
+  try {
+    const result = await syncPendingSales(browserSaleQueue, async (item) => {
+      const response = await fetch("/api/sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item.payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      return { ok: response.ok, status: response.status, error: typeof data.error === "string" ? data.error : undefined };
+    });
+    context.setQueueStatus({ queued: result.queued, needsReview: result.needsReview });
+    if (result.synced > 0) loadSummary(context.today, context.setSummary);
+  } catch {
+    const items = await browserSaleQueue.list().catch(() => []);
+    context.setQueueStatus({
+      queued: items.filter((item) => item.status !== "needs-review").length,
+      needsReview: items.filter((item) => item.status === "needs-review").length,
+    });
+  } finally {
+    context.syncingRef.current = false;
+    context.setSyncing(false);
+    if (context.syncAgainRef.current) {
+      context.syncAgainRef.current = false;
+      void syncBrowserSales(context);
+    }
+  }
 }
 
 export default function QuickPage() {
@@ -38,12 +88,16 @@ export default function QuickPage() {
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<{ liters: number; total: number } | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
+  const [syncing, setSyncing] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const today = new Date().toISOString().split("T")[0];
+  const syncingRef = useRef(false);
+  const syncAgainRef = useRef(false);
+  const [today] = useState(localDateKey);
 
   useEffect(() => {
     const savedPayment = localStorage.getItem("quick_payment") as "cash" | "transfer" | null;
-    if (savedPayment) setPayment(savedPayment);
+    if (savedPayment) queueMicrotask(() => setPayment(savedPayment));
     fetch("/api/fuel-types")
       .then((r) => r.json())
       .then((data: FuelType[]) => {
@@ -54,41 +108,51 @@ export default function QuickPage() {
       })
       .catch(() => {});
     loadSummary(today, setSummary);
-  }, []);
+    const context = { today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing };
+    void syncBrowserSales(context);
+    const handleOnline = () => void syncBrowserSales(context);
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [today]);
 
   const ft = fuelTypes.find((f) => String(f.id) === fuelId);
   const liters = ft && ft.currentPrice > 0 && amount > 0 ? amount / ft.currentPrice : 0;
 
   async function save() {
     if (amount <= 0 || !ft || ft.currentPrice <= 0) return;
-    setSaving(true);
     const seller = localStorage.getItem("fuel_last_seller") ?? "N";
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const clientRequestId = crypto.randomUUID();
+    const item: PendingSale = {
+      id: clientRequestId,
+      createdAt: new Date().toISOString(),
+      status: "queued",
+      attempts: 0,
+      payload: {
+        clientRequestId,
+        date: dateStr,
+        sellerName: seller,
+        fuelTypeId: fuelId,
+        pumpNo: "หัวจ่าย 1",
+        totalAmount: String(amount),
+        pricePerLiter: String(ft.currentPrice),
+        paymentMethod: payment,
+        customerName: "",
+      },
+    };
+    setSaving(true);
     try {
-      const res = await fetch("/api/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientRequestId: crypto.randomUUID(),
-          date: dateStr,
-          sellerName: seller,
-          fuelTypeId: fuelId,
-          pumpNo: "หัวจ่าย 1",
-          totalAmount: String(amount),
-          pricePerLiter: String(ft.currentPrice),
-          paymentMethod: payment,
-          customerName: "",
-        }),
-      });
-      if (res.ok) {
-        const savedL = liters;
-        setAmount(0);
-        if (flashTimer.current) clearTimeout(flashTimer.current);
-        setFlash({ liters: savedL, total: amount });
-        flashTimer.current = setTimeout(() => setFlash(null), 1800);
-        loadSummary(today, setSummary);
-      }
+      await browserSaleQueue.put(item);
+      const savedL = liters;
+      setAmount(0);
+      setQueueStatus((current) => ({ ...current, queued: current.queued + 1 }));
+      if (flashTimer.current) clearTimeout(flashTimer.current);
+      setFlash({ liters: savedL, total: amount });
+      flashTimer.current = setTimeout(() => setFlash(null), 1800);
+      void syncBrowserSales({ today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing });
+    } catch {
+      alert("เก็บรายการลงเครื่องไม่ได้ ยอดเงินยังอยู่ กรุณาลองอีกครั้ง");
     } finally {
       setSaving(false);
     }
@@ -106,6 +170,18 @@ export default function QuickPage() {
       </div>
 
       <div className="flex-1 max-w-lg mx-auto w-full p-4 space-y-3">
+
+        {(queueStatus.queued > 0 || queueStatus.needsReview > 0 || syncing) && (
+          <div role="status" className={`rounded-xl border px-4 py-3 text-sm ${queueStatus.needsReview > 0 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">{syncing ? "กำลังส่งข้อมูล…" : queueStatus.queued > 0 ? `รอส่ง ${queueStatus.queued} รายการ` : `ต้องตรวจ ${queueStatus.needsReview} รายการ`}</p>
+                {queueStatus.needsReview > 0 && <p className="text-xs mt-0.5">ข้อมูลบางรายการไม่ผ่าน กรุณาให้เจ้าของตรวจ</p>}
+              </div>
+              {queueStatus.queued > 0 && !syncing && <button type="button" onClick={() => void syncBrowserSales({ today, syncingRef, syncAgainRef, setSummary, setQueueStatus, setSyncing })} className="min-h-11 rounded-lg bg-blue-600 px-3 font-bold text-white">ส่งอีกครั้ง</button>}
+            </div>
+          </div>
+        )}
 
         {/* Fuel tabs */}
         <div className="flex gap-2">
@@ -160,13 +236,13 @@ export default function QuickPage() {
         {/* Submit */}
         <button onClick={save} disabled={saving || amount <= 0}
           className={`w-full py-5 rounded-2xl font-bold text-xl transition-all active:scale-95 ${amount > 0 ? "bg-blue-600 text-white hover:bg-blue-700 shadow-lg" : "bg-gray-100 text-gray-300"} disabled:opacity-60`}>
-          {saving ? "..." : amount > 0 ? `บันทึก ${fmtInt(amount)} บาท` : "เลือกยอดเงิน"}
+          {saving ? "กำลังเก็บลงเครื่อง…" : amount > 0 ? `บันทึก ${fmtInt(amount)} บาท` : "เลือกยอดเงิน"}
         </button>
 
         {/* Flash feedback */}
         {flash && (
           <div className="bg-green-500 text-white rounded-2xl px-4 py-3 text-center animate-pulse">
-            <p className="font-bold text-lg">✓ บันทึกแล้ว {fmtInt(flash.total)} บาท</p>
+            <p className="font-bold text-lg">✓ เก็บในเครื่องแล้ว {fmtInt(flash.total)} บาท</p>
             <p className="text-sm text-green-100">{fmtDec(flash.liters)} ลิตร · {payment === "cash" ? "เงินสด" : "โอน"}</p>
           </div>
         )}
