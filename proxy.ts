@@ -3,6 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "@/lib/supabase/config";
 
 export async function proxy(request: NextRequest) {
+  const oauthCode = request.nextUrl.searchParams.get("code");
+  if (request.nextUrl.pathname === "/" && oauthCode) {
+    const callbackUrl = new URL("/auth/callback", request.url);
+    callbackUrl.searchParams.set("code", oauthCode);
+    callbackUrl.searchParams.set("next", "/dashboard");
+    return NextResponse.redirect(callbackUrl);
+  }
+
   const config = getSupabaseConfig();
   const loginUrl = new URL("/login", request.url);
   const isApi = request.nextUrl.pathname.startsWith("/api/");
