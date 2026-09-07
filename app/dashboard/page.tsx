@@ -113,6 +113,7 @@ export default function DashboardPage() {
         <div className="border-t border-slate-200 p-4">
           <p className="px-3 pb-1 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">System</p>
           <Link href="/settings" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600"><span aria-hidden="true">⚙</span> ตั้งค่า</Link>
+          {(roleCode === "owner" || roleCode === "manager") && <Link href="/settings/audit-log" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600 hover:bg-slate-50"><span aria-hidden="true">◷</span> ประวัติการทำรายการ</Link>}
           <Link href="/help" className="flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-bold text-slate-600 hover:bg-slate-50"><span aria-hidden="true">?</span> ช่วยเหลือ</Link>
           <div className="my-3 border-t border-slate-200" />
           <div className="flex items-center gap-3 px-3 py-2">
