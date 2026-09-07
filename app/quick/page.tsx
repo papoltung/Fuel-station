@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSaleQueue, createSaleQueueSynchronizer, type PendingSale } from "@/lib/sale-queue";
 
@@ -57,6 +57,10 @@ export default function NewSalePage() {
   const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
   const [syncing, setSyncing] = useState(false);
   const [queuedFlash, setQueuedFlash] = useState("");
+  const [showKeypad, setShowKeypad] = useState(false);
+  const [keypadAmount, setKeypadAmount] = useState("");
+  const customSubmitAmount = useRef<string | null>(null);
+  const fuelFormRef = useRef<HTMLFormElement>(null);
 
   // product-shop UX
   const [productSearch, setProductSearch] = useState("");
@@ -243,8 +247,12 @@ export default function NewSalePage() {
     e.preventDefault();
     setError("");
 
+    const amountForSubmit = customSubmitAmount.current ?? fuelForm.totalAmount;
+    customSubmitAmount.current = null;
+    const effectiveFuelAmount = Number(amountForSubmit || 0);
+
     if (!fuelForm.fuelTypeId) return setError("เลือกชนิดน้ำมัน");
-    if (!fuelForm.totalAmount || fuelAmount <= 0)
+    if (!amountForSubmit || effectiveFuelAmount <= 0)
       return setError("กรอกยอดเงิน");
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
@@ -265,11 +273,12 @@ export default function NewSalePage() {
         payload: {
           clientRequestId: id,
           ...fuelForm,
+          totalAmount: amountForSubmit,
           pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
           date: fuelForm.date + "+07:00",
         },
       });
-      setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${fuelAmount.toLocaleString("th-TH")} — เก็บเข้าคิวแล้ว`);
+      setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${effectiveFuelAmount.toLocaleString("th-TH")} — เก็บเข้าคิวแล้ว`);
       setQueueStatus((value) => ({ ...value, queued: value.queued + 1 }));
       setFuelForm((form) => ({ ...form, date: nowDT(), totalAmount: "", customerName: "" }));
       window.setTimeout(() => setQueuedFlash(""), 3500);
@@ -517,6 +526,7 @@ export default function NewSalePage() {
 
       {saleType === "fuel" ? (
         <form
+          ref={fuelFormRef}
           onSubmit={submitFuel}
           className="max-w-lg mx-auto px-4 pt-5 pb-36 space-y-6"
         >
@@ -631,7 +641,9 @@ export default function NewSalePage() {
 
               <button
                 type="button"
-                onClick={() => setFuel("totalAmount", "")}
+                aria-haspopup="dialog"
+                aria-expanded={showKeypad}
+                onClick={() => { setKeypadAmount(fuelForm.totalAmount); setShowKeypad(true); }}
                 className="h-12 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 active:scale-[0.98]"
               >
                 อื่นๆ
@@ -704,6 +716,17 @@ export default function NewSalePage() {
           </details>
 
           {error && <ErrorBox msg={error} />}
+
+          {showKeypad && (
+            <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby="keypad-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowKeypad(false); }}>
+              <section className="w-full max-w-md rounded-t-[30px] bg-white p-5 shadow-2xl sm:rounded-[30px]">
+                <div className="flex items-start justify-between gap-4"><div><h2 id="keypad-title" className="text-xl font-black">กรอกยอดเงิน</h2><p className="mt-1 text-sm text-slate-500">กดยืนยันเพื่อบันทึกขายทันที</p></div><button type="button" onClick={() => setShowKeypad(false)} className="grid size-11 place-items-center rounded-full bg-slate-100 text-xl" aria-label="ปิดแป้นตัวเลข">×</button></div>
+                <output className="mt-5 flex min-h-20 items-center rounded-2xl bg-slate-50 px-5 text-4xl font-black tabular-nums text-slate-950" aria-live="polite">฿ {Number(keypadAmount || 0).toLocaleString("th-TH")}</output>
+                <div className="mt-4 grid grid-cols-3 gap-2">{["1","2","3","4","5","6","7","8","9","00","0","⌫"].map((key) => <button key={key} type="button" onClick={() => setKeypadAmount((current) => key === "⌫" ? current.slice(0, -1) : current === "0" ? key : `${current}${key}`.replace(/^0+/, ""))} className="min-h-14 rounded-2xl border border-slate-200 bg-white text-xl font-black active:scale-95 active:bg-slate-100" aria-label={key === "⌫" ? "ลบตัวเลข" : key}>{key}</button>)}</div>
+                <button type="button" disabled={Number(keypadAmount) <= 0} onClick={() => { const amount = String(Number(keypadAmount)); customSubmitAmount.current = amount; setFuel("totalAmount", amount); setShowKeypad(false); fuelFormRef.current?.requestSubmit(); }} className="mt-4 min-h-14 w-full rounded-2xl bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-600/20 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">ยืนยัน ฿{Number(keypadAmount || 0).toLocaleString("th-TH")}</button>
+              </section>
+            </div>
+          )}
 
           <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur">
             <div className="max-w-lg mx-auto px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
