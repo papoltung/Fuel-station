@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserSaleQueue, syncPendingSales, type PendingSale } from "@/lib/sale-queue";
+import { browserSaleQueue, createSaleQueueSynchronizer, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = {
   id: number;
@@ -33,11 +33,7 @@ const PAYMENT_OPTIONS = [
 const QUICK_AMOUNTS = [100, 200, 300, 500, 1000];
 type Account = { name: string; role: "owner" | "manager" | "staff" };
 
-let activeQueueSync: Promise<{ synced: number; queued: number; needsReview: number }> | null = null;
-
-function syncSaleQueue() {
-  if (activeQueueSync) return activeQueueSync;
-  activeQueueSync = syncPendingSales(browserSaleQueue, async (item: PendingSale) => {
+const syncSaleQueue = createSaleQueueSynchronizer(browserSaleQueue, async (item: PendingSale) => {
     const response = await fetch("/api/sales", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -45,9 +41,7 @@ function syncSaleQueue() {
     });
     const data = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, error: data.error };
-  }).finally(() => { activeQueueSync = null; });
-  return activeQueueSync;
-}
+});
 
 export default function NewSalePage() {
   const router = useRouter();
@@ -150,7 +144,8 @@ export default function NewSalePage() {
     };
     void refreshQueue();
     window.addEventListener("online", refreshQueue);
-    return () => { mounted = false; window.removeEventListener("online", refreshQueue); };
+    const retryTimer = window.setInterval(refreshQueue, 10_000);
+    return () => { mounted = false; window.removeEventListener("online", refreshQueue); window.clearInterval(retryTimer); };
   }, []);
 
   useEffect(() => {

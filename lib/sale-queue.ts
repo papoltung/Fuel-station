@@ -17,6 +17,26 @@ export type SaleQueueStore = {
 
 type SendResult = { ok: boolean; status: number; error?: string };
 
+export function createSaleQueueSynchronizer(
+  store: SaleQueueStore,
+  send: (item: PendingSale) => Promise<SendResult>,
+) {
+  let tail = Promise.resolve({ synced: 0, queued: 0, needsReview: 0 });
+  return () => {
+    const run = tail.then(() => syncPendingSales(store, send));
+    // Keep the chain usable after a truly unexpected failure.
+    tail = run.catch(async () => {
+      const remaining = await store.list();
+      return {
+        synced: 0,
+        queued: remaining.filter((item) => item.status !== "needs-review").length,
+        needsReview: remaining.filter((item) => item.status === "needs-review").length,
+      };
+    });
+    return run;
+  };
+}
+
 export async function syncPendingSales(
   store: SaleQueueStore,
   send: (item: PendingSale) => Promise<SendResult>,
