@@ -7,12 +7,16 @@ export async function GET(req: NextRequest) {
 
   const start = new Date(dateStr + "T00:00:00+07:00");
   const end = new Date(dateStr + "T23:59:59.999+07:00");
+  const previousStart = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  const previousEnd = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
-  const [sales, productSales, purchases, stockChecks] = await Promise.all([
+  const [sales, productSales, purchases, stockChecks, previousSales, previousProductSales] = await Promise.all([
     prisma.sale.findMany({ where: { date: { gte: start, lte: end } }, include: { fuelType: true } }),
     prisma.productSale.findMany({ where: { date: { gte: start, lte: end } } }),
     prisma.fuelPurchase.findMany({ orderBy: { date: "asc" } }),
     prisma.stockCheck.findMany({ orderBy: { date: "desc" }, distinct: ["fuelTypeId"] }),
+    prisma.sale.findMany({ where: { date: { gte: previousStart, lte: previousEnd } }, select: { totalAmount: true, liters: true } }),
+    prisma.productSale.findMany({ where: { date: { gte: previousStart, lte: previousEnd } }, select: { totalAmount: true } }),
   ]);
 
   const earliestCheck =
@@ -84,6 +88,10 @@ export async function GET(req: NextRequest) {
   const productRevenue = productSales.reduce((s, r) => s + r.totalAmount, 0);
   const productCount = productSales.reduce((s, r) => s + r.quantity, 0);
   const totalRevenue = fuelRevenue + productRevenue;
+  const previousRevenue = previousSales.reduce((sum, sale) => sum + sale.totalAmount, 0)
+    + previousProductSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const previousLiters = previousSales.reduce((sum, sale) => sum + sale.liters, 0);
+  const previousCount = previousSales.length + previousProductSales.length;
 
   const byFuel: Record<string, { label: string; liters: number; revenue: number; cost: number; profit: number; avgCostPerLiter: number }> = {};
   for (const s of sales) {
@@ -115,6 +123,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     date: dateStr,
     totalRevenue,
+    previousRevenue,
+    previousLiters,
+    previousCount,
     fuelRevenue,
     productRevenue,
     totalLiters,
