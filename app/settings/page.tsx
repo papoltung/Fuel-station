@@ -26,7 +26,7 @@ export default function SettingsPage() {
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch("/api/fuel-types");
+      const response = await fetch("/api/fuel-types", { cache: "no-store" });
       if (!response.ok) throw new Error();
       apply(await response.json()); setError("");
     } catch { setError("โหลดราคาน้ำมันไม่สำเร็จ กรุณาลองอีกครั้ง"); }
@@ -36,7 +36,7 @@ export default function SettingsPage() {
     queueMicrotask(async () => {
       setLoading(true);
       try {
-        const response = await fetch("/api/fuel-types");
+        const response = await fetch("/api/fuel-types", { cache: "no-store" });
         if (!response.ok) throw new Error();
         const data: FuelType[] = await response.json();
         setFuels(data);
