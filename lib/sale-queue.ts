@@ -32,6 +32,33 @@ export async function retryNeedsReview(store: SaleQueueStore) {
   }
 }
 
+export async function repairPumpAssignments(
+  store: SaleQueueStore,
+  pumps: Array<{ id: number; number: string; fuelTypeId: number | null; isActive: boolean }>,
+) {
+  const items = await store.list();
+  for (const item of items) {
+    if (item.status !== "needs-review") continue;
+    const fuelTypeId = Number(item.payload.fuelTypeId);
+    const currentPump = pumps.find((pump) => pump.id === item.expectedPumpId);
+    if (!Number.isInteger(fuelTypeId) || (currentPump?.isActive && currentPump.fuelTypeId === fuelTypeId)) continue;
+    const replacement = pumps.find((pump) => pump.isActive && pump.fuelTypeId === fuelTypeId);
+    if (!replacement) continue;
+    await store.put({
+      ...item,
+      status: "queued",
+      expectedPumpId: replacement.id,
+      lastError: undefined,
+      payload: {
+        ...item.payload,
+        expectedPumpId: replacement.id,
+        pumpId: replacement.id,
+        pumpNo: `หัวจ่าย ${replacement.number}`,
+      },
+    });
+  }
+}
+
 async function queueResult(store: SaleQueueStore): Promise<QueueResult> {
   const remaining = await store.list();
   const lastError = remaining.find((item) => item.status === "needs-review")?.lastError;

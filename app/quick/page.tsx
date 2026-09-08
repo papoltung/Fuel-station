@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserSaleQueue, createSaleQueueSynchronizer, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
+import { browserSaleQueue, createSaleQueueSynchronizer, repairPumpAssignments, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = {
   id: number;
@@ -213,9 +213,13 @@ export default function NewSalePage() {
     () => fuelTypes.find((ft) => String(ft.id) === fuelForm.fuelTypeId),
     [fuelTypes, fuelForm.fuelTypeId]
   );
+  const compatiblePumps = useMemo(
+    () => pumps.filter((pump) => pump.isActive && pump.fuelTypeId === Number(fuelForm.fuelTypeId)),
+    [pumps, fuelForm.fuelTypeId]
+  );
   const selectedPump = useMemo(
-    () => pumps.find((pump) => pump.number === fuelForm.pumpNo),
-    [pumps, fuelForm.pumpNo]
+    () => compatiblePumps.find((pump) => pump.number === fuelForm.pumpNo) ?? compatiblePumps[0],
+    [compatiblePumps, fuelForm.pumpNo]
   );
 
   const fuelPrice = Number(fuelForm.pricePerLiter || 0);
@@ -315,7 +319,7 @@ export default function NewSalePage() {
           pumpId: selectedPump.id,
           ...fuelForm,
           totalAmount: amountForSubmit,
-          pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
+          pumpNo: `หัวจ่าย ${selectedPump.number}`,
           date: fuelForm.date + "+07:00",
         },
       });
@@ -345,8 +349,9 @@ export default function NewSalePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientRequestId: crypto.randomUUID(),
+          pumpId: selectedPump.id,
           ...fuelForm,
-          pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
+          pumpNo: `หัวจ่าย ${selectedPump.number}`,
           date: fuelForm.date + "+07:00",
         }),
       });
@@ -527,11 +532,11 @@ export default function NewSalePage() {
           <div className={`mb-3 rounded-2xl border px-4 py-3 text-sm ${queueStatus.needsReview > 0 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="font-bold">{queuedFlash || (syncing ? "กำลังส่งคิวขาย…" : `รอส่ง ${queueStatus.queued} รายการ`)}</p>
+                <p className="font-bold">{queuedFlash || (syncing ? "กำลังส่งคิวขาย…" : queueStatus.queued > 0 ? `รอส่ง ${queueStatus.queued} รายการ` : `มี ${queueStatus.needsReview} รายการต้องตรวจสอบ`)}</p>
                 {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">{queueStatus.lastError || `มี ${queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล`}</p>}
               </div>
               {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void retryNeedsReview(browserSaleQueue).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
+                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void repairPumpAssignments(browserSaleQueue, pumps).then(() => retryNeedsReview(browserSaleQueue)).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
               )}
             </div>
           </div>
@@ -710,8 +715,8 @@ export default function NewSalePage() {
             <SectionTitle title="หัวจ่าย" />
 
             <div className="grid grid-cols-4 gap-2">
-              {PUMP_OPTIONS.map((p) => {
-                const active = fuelForm.pumpNo === p;
+              {(compatiblePumps.length > 0 ? compatiblePumps.map((pump) => pump.number) : PUMP_OPTIONS).map((p) => {
+                const active = selectedPump?.number === p;
 
                 return (
                   <button

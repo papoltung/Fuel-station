@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof Error && error.message === METER_ERROR_CODES.PUMP_NOT_FOUND) return NextResponse.json({ error: "ไม่พบหัวจ่ายหรือหัวจ่ายถูกปิดใช้งาน", code: METER_ERROR_CODES.PUMP_NOT_FOUND }, { status: 404 });
     if (error instanceof Error && error.message === METER_ERROR_CODES.EXPECTED_PUMP_MISMATCH) return NextResponse.json({ error: "หัวจ่ายของรายการออฟไลน์ไม่ตรงกับหัวจ่ายเดิม", code: METER_ERROR_CODES.EXPECTED_PUMP_MISMATCH }, { status: 409 });
     if (error instanceof Error && error.message === METER_ERROR_CODES.PUMP_FUEL_NOT_CONFIGURED) return NextResponse.json({ error: "หัวจ่ายนี้ยังไม่ได้ตั้งค่าชนิดน้ำมัน", code: METER_ERROR_CODES.PUMP_FUEL_NOT_CONFIGURED }, { status: 409 });
-    if (error instanceof Error && error.message === METER_ERROR_CODES.METER_FUEL_MISMATCH) return NextResponse.json({ error: "ชนิดน้ำมันไม่ตรงกับหัวจ่ายหรือรอบมิเตอร์", code: METER_ERROR_CODES.METER_FUEL_MISMATCH }, { status: 409 });
+    if (error instanceof Error && error.message === METER_ERROR_CODES.METER_FUEL_MISMATCH) return NextResponse.json({ error: "ชนิดน้ำมันไม่ตรงกับหัวจ่าย", code: METER_ERROR_CODES.METER_FUEL_MISMATCH }, { status: 409 });
     console.error("sales POST error:", error);
     return NextResponse.json({ error: "บันทึกไม่สำเร็จ" }, { status: 500 });
   }

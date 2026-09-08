@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSaleQueueSynchronizer, retryNeedsReview, syncPendingSales, type PendingSale, type SaleQueueStore } from "./sale-queue";
+import { createSaleQueueSynchronizer, repairPumpAssignments, retryNeedsReview, syncPendingSales, type PendingSale, type SaleQueueStore } from "./sale-queue";
 
 function memoryStore(initial: PendingSale[]): SaleQueueStore & { rows: Map<string, PendingSale> } {
   const rows = new Map(initial.map((item) => [item.id, item]));
@@ -92,6 +92,26 @@ test("sends an authenticated pending sale without shift context", async () => {
   assert.equal(sent, true);
   assert.equal(result.synced, 1);
   assert.equal(store.rows.size, 0);
+});
+
+test("repairs a reviewed sale that was queued against a pump for another fuel", async () => {
+  const item = {
+    ...pending("sale-1", "user-a", undefined, 1),
+    status: "needs-review" as const,
+    lastError: "ชนิดน้ำมันไม่ตรงกับหัวจ่ายหรือรอบมิเตอร์",
+    payload: { clientRequestId: "sale-1", fuelTypeId: "2", pumpId: 1, expectedPumpId: 1, pumpNo: "หัวจ่าย 1" },
+  };
+  const store = memoryStore([item]);
+  await repairPumpAssignments(store, [
+    { id: 1, number: "1", fuelTypeId: 1, isActive: true },
+    { id: 2, number: "2", fuelTypeId: 2, isActive: true },
+  ]);
+  const repaired = store.rows.get("sale-1");
+  assert.equal(repaired?.status, "queued");
+  assert.equal(repaired?.expectedPumpId, 2);
+  assert.equal(repaired?.payload.pumpId, 2);
+  assert.equal(repaired?.payload.pumpNo, "หัวจ่าย 2");
+  assert.equal(repaired?.lastError, undefined);
 });
 
 test("waits for a verified session before synchronizing", async () => {
