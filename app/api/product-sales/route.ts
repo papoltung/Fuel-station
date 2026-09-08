@@ -27,13 +27,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
 
-  const [sale] = await prisma.$transaction([
-    prisma.productSale.create({
+  const sale = await prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id: Number(productId) }, select: { costPrice: true, currentStock: true } });
+    if (!product || product.currentStock < Number(quantity)) throw new Error("สินค้าไม่พอ");
+    const created = await tx.productSale.create({
       data: {
         productId: Number(productId),
         quantity: Number(quantity),
         unitPrice: Number(unitPrice),
         totalAmount: Number(totalAmount),
+        costPriceAtSale: product.costPrice > 0 ? product.costPrice : null,
         paymentMethod,
         sellerName: auth.user.name,
         customerName: customerName || null,
@@ -41,12 +44,13 @@ export async function POST(req: NextRequest) {
         date: date ? new Date(date) : new Date(),
       },
       include: { product: true },
-    }),
-    prisma.product.update({
+    });
+    await tx.product.update({
       where: { id: Number(productId) },
       data: { currentStock: { decrement: Math.round(quantity) } },
-    }),
-  ]);
+    });
+    return created;
+  });
 
   return NextResponse.json(sale, { status: 201 });
 }

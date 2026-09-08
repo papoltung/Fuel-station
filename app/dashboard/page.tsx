@@ -15,6 +15,7 @@ type Summary = {
 };
 type Stock = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type Sale = { id: number; date: string; sellerName: string; totalAmount: number; paymentMethod: string; pumpNo: string; fuelType: { name: string; label: string } };
+type ProductSale = { id: number; date: string; sellerName: string; totalAmount: number; paymentMethod: string; quantity: number; product: { name: string } };
 type Meter = { id: number; meterEnd: number | null; fuelType: { name: string; label: string } };
 type Account = { name: string; email: string; avatarUrl: string; role: string };
 
@@ -53,6 +54,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  const [productSales, setProductSales] = useState<ProductSale[]>([]);
   const [meters, setMeters] = useState<Meter[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -86,11 +88,13 @@ export default function DashboardPage() {
       roleCode === "owner" ? read("/api/fuel-stock") : Promise.resolve([]),
       read(`/api/sales?date=${date}`),
       read(`/api/meter-periods?date=${date}`),
-    ]).then(([summaryData, stockData, saleData, meterData]) => {
+      read(`/api/product-sales?date=${date}`),
+    ]).then(([summaryData, stockData, saleData, meterData, productSaleData]) => {
       setSummary(summaryData);
       setStocks(Array.isArray(stockData) ? stockData : []);
       setSales(Array.isArray(saleData) ? saleData : []);
       setMeters(Array.isArray(meterData) ? meterData : []);
+      setProductSales(Array.isArray(productSaleData) ? productSaleData : []);
       setError("");
     }).catch(() => { if (!controller.signal.aborted) setError("โหลดข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -98,6 +102,10 @@ export default function DashboardPage() {
   }, [date, retry, roleCode]);
 
   const totalStock = stocks.reduce((sum, item) => sum + Math.max(0, item.currentLiters), 0);
+  const recentSales = [
+    ...sales.map(sale => ({ ...sale, kind: "fuel" as const })),
+    ...productSales.map(sale => ({ ...sale, kind: "product" as const })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <div className="min-h-dvh bg-[#f4f7fb] text-slate-950 lg:pl-60">
@@ -173,8 +181,8 @@ export default function DashboardPage() {
           </div>}
 
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">การขายล่าสุด</h2><span className="text-sm text-slate-400">{sales.length} รายการ</span></div>
-            {sales.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">ยังไม่มีรายการขายในวันนี้</p> : <div className="divide-y divide-slate-100">{sales.slice(0, 6).map((sale) => { const style = FUEL_STYLE[sale.fuelType.name] ?? FUEL_STYLE.diesel; return <div key={sale.id} className="grid min-h-16 grid-cols-[3rem_1fr_auto] items-center gap-3"><time className="text-sm tabular-nums text-slate-500">{time(sale.date)}</time><div className="flex min-w-0 items-center gap-3"><span className={`size-3 shrink-0 rounded-full ${style.dot}`} /><div className="min-w-0"><p className="truncate font-bold">{sale.fuelType.label}</p><p className="text-xs text-slate-400">{sale.pumpNo} · ขายโดย {sale.sellerName}</p></div></div><div className="text-right"><p className="font-black tabular-nums">฿ {money(sale.totalAmount)}</p><span className={`inline-block rounded-lg px-2 py-0.5 text-xs font-bold ${style.soft}`}>{PAYMENT_LABEL[sale.paymentMethod] ?? sale.paymentMethod}</span>{(roleCode === "owner" || roleCode === "manager") && <Link href={`/sales/${sale.id}/edit`} className="ml-2 inline-block rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">แก้ไข</Link>}</div></div>; })}</div>}
+            <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">การขายล่าสุด</h2><span className="text-sm text-slate-400">{recentSales.length} รายการ</span></div>
+            {recentSales.length === 0 ? <p className="py-10 text-center text-sm text-slate-400">ยังไม่มีรายการขายในวันนี้</p> : <div className="divide-y divide-slate-100">{recentSales.slice(0, 8).map((sale) => { const isFuel = sale.kind === "fuel"; const style = isFuel ? (FUEL_STYLE[sale.fuelType.name] ?? FUEL_STYLE.diesel) : { dot: "bg-violet-500", soft: "bg-violet-50 text-violet-700" }; return <div key={`${sale.kind}-${sale.id}`} className="grid min-h-16 grid-cols-[3rem_1fr_auto] items-center gap-3"><time className="text-sm tabular-nums text-slate-500">{time(sale.date)}</time><div className="flex min-w-0 items-center gap-3"><span className={`size-3 shrink-0 rounded-full ${style.dot}`} /><div className="min-w-0"><p className="truncate font-bold">{isFuel ? sale.fuelType.label : sale.product.name}</p><p className="text-xs text-slate-400">{isFuel ? sale.pumpNo : `สินค้า × ${sale.quantity}`} · ขายโดย {sale.sellerName}</p></div></div><div className="text-right"><p className="font-black tabular-nums">฿ {money(sale.totalAmount)}</p><span className={`inline-block rounded-lg px-2 py-0.5 text-xs font-bold ${style.soft}`}>{PAYMENT_LABEL[sale.paymentMethod] ?? sale.paymentMethod}</span>{isFuel && (roleCode === "owner" || roleCode === "manager") && <Link href={`/sales/${sale.id}/edit`} className="ml-2 inline-block rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">แก้ไข</Link>}</div></div>; })}</div>}
           </section>
         </>}
       </main>

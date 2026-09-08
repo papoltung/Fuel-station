@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const purchases = await prisma.fuelPurchase.findMany({
-      include: { fuelType: true },
+      include: { fuelType: true, audits: { orderBy: { createdAt: "desc" }, take: 3 } },
       orderBy: { date: "desc" },
       take: 50,
     });

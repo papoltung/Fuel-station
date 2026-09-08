@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 type StockItem = { id: number; fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
-type Purchase = { id: number; date: string; fuelTypeId: number; liters: number; costPerLiter: number; totalCost: number; invoiceNo: string | null; supplier: string | null; isPaid: boolean; paidNote: string | null; fuelType: { label: string; currentPrice: number } };
+type Purchase = { id: number; date: string; fuelTypeId: number; liters: number; costPerLiter: number; totalCost: number; invoiceNo: string | null; supplier: string | null; isPaid: boolean; paidNote: string | null; fuelType: { label: string; currentPrice: number }; audits: { actorName: string; oldCost: number; newCost: number; reason: string; createdAt: string }[] };
 type StockCheck = { id: number; date: string; systemLiters: number; actualLiters: number; difference: number; fuelType: { label: string } };
 type Product = { id: number; name: string; category: string; size: string; unit: string; currentPrice: number; costPrice: number; currentStock: number; minStock: number; isActive: boolean };
 type DebtPayment = { id: number; amount: number; note: string | null; paidAt: string };
@@ -65,6 +65,9 @@ export default function StockPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingCheckId, setDeletingCheckId] = useState<number | null>(null);
   const [markingPaidId, setMarkingPaidId] = useState<number | null>(null);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<number | null>(null);
+  const [editCost, setEditCost] = useState("");
+  const [editReason, setEditReason] = useState("");
 
   function reload() {
     setLoading(true);
@@ -188,6 +191,14 @@ export default function StockPage() {
       else reload();
     } catch { alert("เกิดข้อผิดพลาด"); }
     finally { setDeletingId(null); }
+  }
+
+  async function savePurchaseCost(id: number) {
+    const cost = Number(editCost);
+    if (!Number.isFinite(cost) || cost <= 0 || !editReason.trim()) return alert("กรอกราคาทุนและเหตุผล");
+    const res = await fetch(`/api/purchases/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ costPerLiter: cost, reason: editReason }) });
+    if (!res.ok) return alert((await res.json()).error ?? "แก้ไขไม่สำเร็จ");
+    setEditingPurchaseId(null); setEditCost(""); setEditReason(""); reload();
   }
 
   const totalLiters = stocks.reduce((a, s) => a + s.currentLiters, 0);
@@ -633,6 +644,8 @@ export default function StockPage() {
                               <p className="text-xs text-slate-400">ทุน {fmtDec(p.costPerLiter)} ฿/L</p>
                             </div>
                           </div>
+                          {editingPurchaseId === p.id ? <div className="mt-3 space-y-2 rounded-xl bg-slate-50 p-3"><label className="block text-xs font-bold" htmlFor={`cost-${p.id}`}>ราคาทุนใหม่ (บาท/ลิตร)</label><input id={`cost-${p.id}`} type="number" min="0.01" step="0.01" value={editCost} onChange={e => setEditCost(e.target.value)} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /><label className="block text-xs font-bold" htmlFor={`reason-${p.id}`}>เหตุผลที่แก้</label><input id={`reason-${p.id}`} value={editReason} onChange={e => setEditReason(e.target.value)} maxLength={300} className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3" /><div className="flex gap-2"><button onClick={() => savePurchaseCost(p.id)} className="min-h-11 flex-1 rounded-xl bg-blue-600 font-bold text-white">บันทึกต้นทุน</button><button onClick={() => setEditingPurchaseId(null)} className="min-h-11 rounded-xl border px-4">ยกเลิก</button></div></div> : <button onClick={() => { setEditingPurchaseId(p.id); setEditCost(String(p.costPerLiter)); setEditReason(""); }} className="mt-2 min-h-10 rounded-lg bg-slate-100 px-3 text-xs font-bold text-slate-700">แก้ราคาทุน</button>}
+                          {p.audits?.[0] && <p className="mt-2 text-xs text-slate-500">แก้ล่าสุด {fmtDec(p.audits[0].oldCost)} → {fmtDec(p.audits[0].newCost)} โดย {p.audits[0].actorName} · {p.audits[0].reason}</p>}
                         </div>
                       ))
                     )}

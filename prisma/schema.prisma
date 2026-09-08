@@ -82,6 +82,21 @@ model FuelPurchase {
   isPaid       Boolean  @default(true)
   paidNote     String?
   createdAt    DateTime @default(now())
+  audits       FuelPurchaseAudit[]
+}
+
+model FuelPurchaseAudit {
+  id            Int          @id @default(autoincrement())
+  fuelPurchase  FuelPurchase @relation(fields: [fuelPurchaseId], references: [id], onDelete: Cascade)
+  fuelPurchaseId Int
+  actorId       Int
+  actorName     String
+  actorEmail    String
+  oldCost       Float
+  newCost       Float
+  reason        String
+  createdAt     DateTime     @default(now())
+  @@index([fuelPurchaseId, createdAt])
 }
 
 model StockCheck {
@@ -129,6 +144,7 @@ model ProductSale {
   quantity      Float
   unitPrice     Float
   totalAmount   Float
+  costPriceAtSale Float?
   paymentMethod String
   customerName  String?
   note          String?

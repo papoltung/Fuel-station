@@ -36,7 +36,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     report = estimateProfit([
       ...sales.map(sale => ({ label: sale.fuelType.label, revenue: sale.totalAmount, quantity: sale.liters,
         unitCost: purchases.find(purchase => purchase.fuelTypeId === sale.fuelTypeId && purchase.date <= sale.date)?.costPerLiter ?? null })),
-      ...products.map(sale => ({ label: sale.product.name, revenue: sale.totalAmount, quantity: sale.quantity, unitCost: sale.product.costPrice })),
+      ...products.map(sale => ({ label: `${sale.product.name} · ขายโดย ${sale.sellerName}`, revenue: sale.totalAmount, quantity: sale.quantity, unitCost: sale.costPriceAtSale ?? sale.product.costPrice })),
     ]);
   } catch {
     return <main className="p-8"><h1>โหลดรายงานไม่สำเร็จ</h1><p>กรุณาลองใหม่ ไม่ได้แสดงยอดเป็นศูนย์แทนข้อมูลที่โหลดไม่ได้</p><Link href={`/reports?date=${date}`} className="text-blue-700 underline">ลองอีกครั้ง</Link></main>;
