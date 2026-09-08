@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSaleQueueSynchronizer, syncPendingSales, type PendingSale, type SaleQueueStore } from "./sale-queue";
+import { createSaleQueueSynchronizer, retryNeedsReview, syncPendingSales, type PendingSale, type SaleQueueStore } from "./sale-queue";
 
 function memoryStore(initial: PendingSale[]): SaleQueueStore & { rows: Map<string, PendingSale> } {
   const rows = new Map(initial.map((item) => [item.id, item]));
@@ -43,6 +43,20 @@ test("marks invalid data for review instead of retrying forever", async () => {
   const store = memoryStore([pending("sale-1")]);
   await syncPendingSales(store, async () => ({ ok: false, status: 400, error: "invalid" }));
   assert.equal(store.rows.get("sale-1")?.status, "needs-review");
+});
+
+test("manual retry requeues needs-review sales so the server is called again", async () => {
+  const item = { ...pending("sale-1"), status: "needs-review" as const, lastError: "missing meter" };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store);
+  let sent = 0;
+  const result = await syncPendingSales(store, async () => {
+    sent += 1;
+    return { ok: true, status: 201 };
+  });
+  assert.equal(sent, 1);
+  assert.equal(result.synced, 1);
+  assert.equal(store.rows.size, 0);
 });
 
 test("keeps a sale queued when its user has not opened a shift yet", async () => {

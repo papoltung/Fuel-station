@@ -20,14 +20,25 @@ export type SaleQueueStore = {
 
 export type SendResult = { ok: boolean; status: number; error?: string; errorCode?: string };
 
-type QueueResult = { synced: number; queued: number; needsReview: number };
+type QueueResult = { synced: number; queued: number; needsReview: number; lastError?: string };
+
+export async function retryNeedsReview(store: SaleQueueStore) {
+  const items = await store.list();
+  for (const item of items) {
+    if (item.status === "needs-review") {
+      await store.put({ ...item, status: "queued" });
+    }
+  }
+}
 
 async function queueResult(store: SaleQueueStore): Promise<QueueResult> {
   const remaining = await store.list();
+  const lastError = remaining.find((item) => item.status === "needs-review")?.lastError;
   return {
     synced: 0,
     queued: remaining.filter((item) => item.status !== "needs-review").length,
     needsReview: remaining.filter((item) => item.status === "needs-review").length,
+    ...(lastError ? { lastError } : {}),
   };
 }
 
@@ -36,7 +47,7 @@ export function createSaleQueueSynchronizer(
   send: (item: PendingSale) => Promise<SendResult>,
   getCurrentAuthUserId?: () => Promise<string | null>,
 ) {
-  let tail = Promise.resolve({ synced: 0, queued: 0, needsReview: 0 });
+  let tail: Promise<QueueResult> = Promise.resolve({ synced: 0, queued: 0, needsReview: 0 });
   return () => {
     const run = tail.then(async () => {
       if (!getCurrentAuthUserId) return syncPendingSales(store, send);
@@ -89,10 +100,12 @@ export async function syncPendingSales(
     }
   }
   const remaining = await store.list();
+  const lastError = remaining.find((item) => item.status === "needs-review")?.lastError;
   return {
     synced,
     queued: remaining.filter((item) => item.status !== "needs-review").length,
     needsReview: remaining.filter((item) => item.status === "needs-review").length,
+    ...(lastError ? { lastError } : {}),
   };
 }
 

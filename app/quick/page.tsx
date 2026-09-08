@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserSaleQueue, createSaleQueueSynchronizer, type PendingSale } from "@/lib/sale-queue";
+import { browserSaleQueue, createSaleQueueSynchronizer, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
 import { resolveCachedSaleContext, type SaleContext } from "@/lib/sale-context";
 
 type FuelType = {
@@ -111,7 +111,7 @@ export default function NewSalePage() {
   const [success, setSuccess] = useState(false);
   const [successData, setSuccessData] = useState({ amount: 0, label: "" });
   const [account, setAccount] = useState<Account | null>(null);
-  const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
+  const [queueStatus, setQueueStatus] = useState<{ queued: number; needsReview: number; lastError?: string }>({ queued: 0, needsReview: 0 });
   const [syncing, setSyncing] = useState(false);
   const [queuedFlash, setQueuedFlash] = useState("");
   const [verifiedSaleContext, setVerifiedSaleContext] = useState<SaleContext | null>(null);
@@ -242,7 +242,7 @@ export default function NewSalePage() {
       setSyncing(true);
       try {
         const result = await syncSaleQueue();
-        if (mounted) setQueueStatus({ queued: result.queued, needsReview: result.needsReview });
+        if (mounted) setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError });
       } finally {
         if (mounted) setSyncing(false);
       }
@@ -400,14 +400,16 @@ export default function NewSalePage() {
           date: fuelForm.date + "+07:00",
         },
       });
-      setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${effectiveFuelAmount.toLocaleString("th-TH")} — เก็บเข้าคิวแล้ว`);
+      setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${effectiveFuelAmount.toLocaleString("th-TH")} — บันทึกแล้ว`);
       setQueueStatus((value) => ({ ...value, queued: value.queued + 1 }));
       setFuelForm((form) => ({ ...form, date: nowDT(), totalAmount: "", customerName: "" }));
       window.setTimeout(() => setQueuedFlash(""), 3500);
-      setSyncing(true);
-      void syncSaleQueue()
-        .then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview }))
-        .finally(() => setSyncing(false));
+      window.setTimeout(() => {
+        setSyncing(true);
+        void syncSaleQueue()
+          .then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError }))
+          .finally(() => setSyncing(false));
+      }, 5000);
       return;
     } catch {
       setError("อุปกรณ์นี้เก็บคิวขายไม่ได้ กรุณาลองใหม่");
@@ -605,10 +607,10 @@ export default function NewSalePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-bold">{queuedFlash || (syncing ? "กำลังส่งคิวขาย…" : `รอส่ง ${queueStatus.queued} รายการ`)}</p>
-                {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">มี {queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล</p>}
+                {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">{queueStatus.lastError || `มี ${queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล`}</p>}
               </div>
               {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-                <button type="button" disabled={syncing} onClick={() => { setSyncing(true); void syncSaleQueue().then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
+                <button type="button" disabled={syncing} onClick={() => { setSyncing(true); void retryNeedsReview(browserSaleQueue).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
               )}
             </div>
           </div>
