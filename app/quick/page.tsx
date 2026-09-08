@@ -328,20 +328,28 @@ export default function NewSalePage() {
       return setError("กรอกยอดเงิน");
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
-    const pumpForSale = selectedPump;
-    if (!pumpForSale)
-      return setError(
+    if (!selectedPump) {
+      setError(
         compatiblePumps.length === 0
           ? "ไม่มีหัวจ่ายที่ตรงกับชนิดน้ำมันนี้"
           : "กรุณาเลือกหัวจ่าย"
       );
-    if (pumpForSale.fuelTypeId !== Number(fuelForm.fuelTypeId))
-      return setError("ชนิดน้ำมันไม่ตรงกับหัวจ่าย กรุณาเลือกใหม่");
+      return;
+    }
+
+    const pumpForSale: Pump = selectedPump;
+
+    if (pumpForSale.fuelTypeId !== Number(fuelForm.fuelTypeId)) {
+      setError("ชนิดน้ำมันไม่ตรงกับหัวจ่าย กรุณาเลือกใหม่");
+      return;
+    }
     if (
       fuelForm.paymentMethod === "credit" &&
       !fuelForm.customerName.trim()
-    )
-      return setError("กรอกชื่อลูกค้าเครดิต");
+    ) {
+      setError("กรอกชื่อลูกค้าเครดิต");
+      return;
+    }
 
     // Persist first, clear the form immediately, then let the queue sync in the background.
     try {
