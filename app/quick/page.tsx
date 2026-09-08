@@ -30,7 +30,7 @@ const PAYMENT_OPTIONS = [
   { value: "credit", label: "เครดิต", icon: "▣" },
 ];
 
-const QUICK_AMOUNTS = [100, 200, 300, 500, 1000];
+const QUICK_AMOUNTS = [40, 50, 60, 80, 100, 200, 300, 500, 1000];
 type Account = { name: string; role: "owner" | "manager" | "staff" };
 
 const syncSaleQueue = createSaleQueueSynchronizer(browserSaleQueue, async (item: PendingSale) => {
@@ -619,7 +619,7 @@ export default function NewSalePage() {
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="mt-3 grid grid-cols-4 gap-2">
               {QUICK_AMOUNTS.map((amt) => {
                 const active = fuelForm.totalAmount === String(amt);
 
