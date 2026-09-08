@@ -95,13 +95,15 @@ type StoredSale = {
   date: Date;
   meterStart: number | null;
   meterEnd: number | null;
+  pumpId?: number | null;
 };
 
-export function isSameSaleRequest(existing: StoredSale, input: ReturnType<typeof parseSaleInput>) {
+export function isSameSaleRequest(existing: StoredSale, input: ReturnType<typeof parseSaleInput>, pumpId?: number) {
   return existing.clientRequestId === input.clientRequestId
     && existing.fuelTypeId === input.fuelTypeId
     && existing.sellerName === input.sellerName
     && existing.pumpNo === input.pumpNo
+    && (existing.pumpId === undefined || existing.pumpId === null || existing.pumpId === pumpId)
     && existing.pricePerLiter === input.pricePerLiter
     && existing.totalAmount === input.totalAmount
     && existing.liters === input.liters

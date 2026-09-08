@@ -23,6 +23,14 @@ type Product = {
   image: string | null;
 };
 
+type Pump = {
+  id: number;
+  number: string;
+  label: string;
+  isActive: boolean;
+  fuelTypeId: number | null;
+};
+
 const PUMP_OPTIONS = ["1", "2", "3", "4"];
 
 const PAYMENT_OPTIONS = [
@@ -97,6 +105,7 @@ export default function NewSalePage() {
   const [saleType, setSaleType] = useState<"fuel" | "product">("fuel");
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [pumps, setPumps] = useState<Pump[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -180,6 +189,11 @@ export default function NewSalePage() {
         }
       })
       .catch(() => setError("โหลดข้อมูลสินค้าไม่สำเร็จ"));
+
+    fetch("/api/pumps", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : [])
+      .then((data: Pump[]) => setPumps(Array.isArray(data) ? data : []))
+      .catch(() => setPumps([]));
 
     fetch("/api/me").then((response) => response.ok ? response.json() : null).then(setAccount);
   }, []);
@@ -273,6 +287,10 @@ export default function NewSalePage() {
     () => fuelTypes.find((ft) => String(ft.id) === fuelForm.fuelTypeId),
     [fuelTypes, fuelForm.fuelTypeId]
   );
+  const selectedPump = useMemo(
+    () => pumps.find((pump) => pump.number === fuelForm.pumpNo),
+    [pumps, fuelForm.pumpNo]
+  );
 
   const fuelPrice = Number(fuelForm.pricePerLiter || 0);
   const fuelAmount = Number(fuelForm.totalAmount || 0);
@@ -343,6 +361,8 @@ export default function NewSalePage() {
       return setError("กรอกยอดเงิน");
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
+    if (!selectedPump)
+      return setError("กรุณาเลือกหัวจ่ายที่ตั้งค่าไว้");
     if (
       fuelForm.paymentMethod === "credit" &&
       !fuelForm.customerName.trim()
@@ -368,9 +388,12 @@ export default function NewSalePage() {
         attempts: 0,
         createdByAuthUserId: saleContext.authUserId,
         expectedShiftId: saleContext.shiftId,
+        expectedPumpId: selectedPump.id,
         payload: {
           clientRequestId: id,
           expectedShiftId: saleContext.shiftId,
+          expectedPumpId: selectedPump.id,
+          pumpId: selectedPump.id,
           ...fuelForm,
           totalAmount: amountForSubmit,
           pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,

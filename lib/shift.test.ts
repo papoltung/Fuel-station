@@ -24,6 +24,11 @@ test("closed shifts cannot be closed again", () => {
   assert.equal(canCloseShift({ actorRole: "owner", actorId: 1, openedById: 2, status: "closed" }), false);
 });
 
+test("cannot close a shift while a meter period is still open", () => {
+  assert.equal(canCloseShift({ actorRole: "owner", actorId: 1, openedById: 2, status: "open", openMeterCount: 1 }), false);
+  assert.equal(canCloseShift({ actorRole: "owner", actorId: 1, openedById: 2, status: "open", openMeterCount: 0 }), true);
+});
+
 test("opening cash must be a finite non-negative number", () => {
   assert.equal(parseOpeningCash({ openingCash: 250 }).value, 250);
   assert.equal(parseOpeningCash({ openingCash: -1 }).error, "INVALID_OPENING_CASH");

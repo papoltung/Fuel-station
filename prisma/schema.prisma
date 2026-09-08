@@ -44,6 +44,7 @@ model FuelType {
   purchases    FuelPurchase[]
   stockChecks  StockCheck[]
   fuelStock    FuelStock?
+  pumps        Pump[]
   meterPeriods MeterPeriod[]
   saleOrders   SaleOrder[]
   createdAt    DateTime        @default(now())
@@ -67,9 +68,23 @@ model Shift {
   closedByEmail String?
   sales        Sale[]
   productSales ProductSale[]
+  meterPeriods MeterPeriod[]
 
   @@index([openedById, status])
   @@index([openedAt])
+}
+
+model Pump {
+  id           Int            @id @default(autoincrement())
+  number       String         @unique
+  label        String
+  fuelType     FuelType?      @relation(fields: [fuelTypeId], references: [id])
+  fuelTypeId   Int?
+  isActive     Boolean        @default(true)
+  sales        Sale[]
+  meterPeriods MeterPeriod[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 }
 
 model Sale {
@@ -90,7 +105,11 @@ model Sale {
   note          String?
   shift         Shift?   @relation(fields: [shiftId], references: [id])
   shiftId       Int?
+  pump          Pump?    @relation(fields: [pumpId], references: [id])
+  pumpId        Int?
   createdAt     DateTime @default(now())
+
+  @@index([shiftId, pumpId])
 }
 
 model FuelPurchase {
@@ -235,5 +254,19 @@ model MeterPeriod {
   pricePerLiter Float
   totalRevenue  Float?
   note          String?
+  shift         Shift?   @relation(fields: [shiftId], references: [id])
+  shiftId       Int?
+  pump          Pump?    @relation(fields: [pumpId], references: [id])
+  pumpId        Int?
+  openedById    Int?
+  openedByName  String?
+  openedByEmail String?
+  closedById    Int?
+  closedByName  String?
+  closedByEmail String?
+  closedAt      DateTime?
   createdAt     DateTime @default(now())
+
+  @@index([shiftId, pumpId])
+  @@index([pumpId, meterEnd])
 }

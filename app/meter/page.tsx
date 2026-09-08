@@ -20,15 +20,26 @@ type MeterPeriod = {
   pricePerLiter: number;
   totalRevenue: number | null;
   note: string | null;
+  pumpId: number | null;
+  shiftId: number | null;
   fuelType: { label: string; name: string };
+  pump: { id: number; number: string; label: string } | null;
+  shift: { id: number; status: string; openedById: number; openedByName: string; closedAt: string | null } | null;
+  openedByName: string | null;
+  closedByName: string | null;
 };
 
 type Sale = {
+  pumpId: number | null;
+  shiftId: number | null;
   fuelTypeId: number;
   totalAmount: number;
   liters: number;
   date: string;
 };
+
+type Pump = { id: number; number: string; label: string; isActive: boolean };
+type Shift = { id: number; status: string; openedByName: string; openedAt: string; closedAt: string | null };
 
 function fmt(n: number) {
   return Number(n || 0).toLocaleString("th-TH", {
@@ -79,6 +90,8 @@ export default function MeterPage() {
   const today = new Date().toISOString().split("T")[0];
 
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
+  const [pumps, setPumps] = useState<Pump[]>([]);
+  const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [periods, setPeriods] = useState<MeterPeriod[]>([]);
   const [allSales, setAllSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +104,7 @@ export default function MeterPage() {
 
   const [form, setForm] = useState({
     fuelTypeId: "",
+    pumpId: "",
     meterStart: "",
     meterEnd: "",
     pricePerLiter: "",
@@ -103,9 +117,11 @@ export default function MeterPage() {
 
     Promise.all([
       fetch("/api/fuel-types").then((r) => r.json()).catch(() => []),
+      fetch("/api/pumps").then((r) => r.json()).catch(() => []),
+      fetch("/api/shifts", { cache: "no-store" }).then((r) => r.json()).catch(() => ({})),
       fetch("/api/meter-periods").then((r) => r.json()).catch(() => []),
       fetch("/api/sales").then((r) => r.json()).catch(() => []),
-    ]).then(([ft, mp, sl]) => {
+    ]).then(([ft, pumpRows, shiftData, mp, sl]) => {
       const allFuel = (ft as FuelType[]) ?? [];
       const filtered = allFuel.filter((f) =>
         ["diesel", "benzin95"].includes(f.name)
@@ -114,6 +130,9 @@ export default function MeterPage() {
       const useFuel = filtered.length > 0 ? filtered : allFuel;
 
       setFuelTypes(useFuel);
+      const allPumps = Array.isArray(pumpRows) ? pumpRows as Pump[] : [];
+      setPumps(allPumps);
+      setCurrentShift(shiftData?.currentShift ?? null);
       setPeriods(mp ?? []);
       setAllSales(sl ?? []);
 
@@ -122,6 +141,7 @@ export default function MeterPage() {
         setForm((f) => ({
           ...f,
           fuelTypeId: String(first.id),
+          pumpId: f.pumpId || (allPumps[0] ? String(allPumps[0].id) : ""),
           pricePerLiter:
             first.currentPrice > 0 ? String(first.currentPrice) : "",
         }));
@@ -153,7 +173,7 @@ export default function MeterPage() {
       const res = await fetch("/api/meter-periods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, pumpId: Number(form.pumpId), expectedShiftId: currentShift?.id }),
       });
 
       const data = await res.json();
@@ -224,6 +244,10 @@ export default function MeterPage() {
     fuelTypeId: number;
     fuelLabel: string;
     fuelName: string;
+    pumpId: number | null;
+    pumpLabel: string;
+    shiftId: number | null;
+    shiftName: string;
     periods: MeterPeriod[];
     meterLiters: number;
     meterRevenue: number;
@@ -237,12 +261,14 @@ export default function MeterPage() {
 
     for (const p of periods) {
       const dateStr = new Date(p.date).toDateString();
-      const key = `${dateStr}__${p.fuelTypeId}`;
+      const key = `${dateStr}__${p.fuelTypeId}__${p.pumpId ?? "legacy"}__${p.shiftId ?? "legacy"}`;
 
       if (!map.has(key)) {
         const daySales = allSales.filter(
           (s) =>
             s.fuelTypeId === p.fuelTypeId &&
+            s.pumpId === p.pumpId &&
+            s.shiftId === p.shiftId &&
             new Date(s.date).toDateString() === dateStr
         );
 
@@ -252,6 +278,10 @@ export default function MeterPage() {
           fuelTypeId: p.fuelTypeId,
           fuelLabel: p.fuelType.label,
           fuelName: p.fuelType.name,
+          pumpId: p.pumpId,
+          pumpLabel: p.pump?.label ?? "หัวจ่ายเดิม",
+          shiftId: p.shiftId,
+          shiftName: p.shift ? `กะ #${p.shift.id} · ${p.shift.openedByName}` : "ข้อมูลกะเดิม",
           periods: [],
           meterLiters: 0,
           meterRevenue: 0,
@@ -288,14 +318,6 @@ export default function MeterPage() {
       p.meterEnd != null &&
       new Date(p.date).toDateString() === new Date().toDateString()
   ).length;
-
-  const previewLiters =
-    Number(form.meterEnd || 0) - Number(form.meterStart || 0);
-
-  const previewRevenue =
-    previewLiters > 0 && Number(form.pricePerLiter) > 0
-      ? previewLiters * Number(form.pricePerLiter)
-      : 0;
 
   return (
     <main className="min-h-screen bg-[#eef4fb] text-slate-900">
@@ -349,7 +371,9 @@ export default function MeterPage() {
 
             <button
               onClick={() => setShowForm(true)}
-              className="mb-1 h-11 rounded-2xl bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20"
+              disabled={!currentShift}
+              title={currentShift ? "เปิดรอบมิเตอร์ในกะปัจจุบัน" : "ต้องเปิดกะก่อน"}
+              className="mb-1 h-11 rounded-2xl bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
             >
               + เปิดรอบ
             </button>
@@ -427,6 +451,9 @@ export default function MeterPage() {
                       </div>
                       <p className="mt-1 text-xs text-slate-400">
                         {shortDate(g.periods[0].date)}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-blue-600">
+                        {g.pumpLabel} · {g.shiftName}
                       </p>
                     </div>
 
@@ -538,6 +565,9 @@ export default function MeterPage() {
                       <h3 className="font-black">{g.fuelLabel}</h3>
                       <p className="text-xs text-slate-400">
                         {shortDate(g.periods[0].date)}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-blue-600">
+                        {g.pumpLabel} · {g.shiftName}
                       </p>
                     </div>
 
@@ -663,6 +693,21 @@ export default function MeterPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+                <label className="block">
+                  <span className="mb-2 block text-xs font-bold text-slate-500">หัวจ่าย · กะปัจจุบัน</span>
+                  <select
+                    value={form.pumpId}
+                    onChange={(e) => setForm((f) => ({ ...f, pumpId: e.target.value }))}
+                    required
+                    className="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-bold outline-none focus:border-blue-500"
+                  >
+                    <option value="">เลือกหัวจ่าย</option>
+                    {pumps.map((pump) => <option key={pump.id} value={pump.id}>{pump.label}</option>)}
+                  </select>
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {currentShift ? `กะ #${currentShift.id} · เปิดโดย ${currentShift.openedByName}` : "ยังไม่มีกะที่เปิดอยู่"}
+                  </span>
+                </label>
                 <div className="grid grid-cols-2 gap-3">
                   {fuelTypes.map((ft) => {
                     const active = form.fuelTypeId === String(ft.id);

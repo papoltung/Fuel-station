@@ -8,6 +8,7 @@ export type PendingSale = {
   payload: Record<string, unknown> & { clientRequestId: string };
   createdByAuthUserId?: string;
   expectedShiftId?: number;
+  expectedPumpId?: number;
   lastError?: string;
 };
 
@@ -60,7 +61,7 @@ export async function syncPendingSales(
   const items = (await store.list()).filter((item) => item.status !== "needs-review");
   let synced = 0;
   for (const item of items) {
-    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedShiftId !== "number" || !Number.isInteger(item.expectedShiftId) || item.expectedShiftId <= 0)) {
+    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedShiftId !== "number" || !Number.isInteger(item.expectedShiftId) || item.expectedShiftId <= 0 || typeof item.expectedPumpId !== "number" || !Number.isInteger(item.expectedPumpId) || item.expectedPumpId <= 0)) {
       await store.put({ ...item, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" });
       continue;
     }

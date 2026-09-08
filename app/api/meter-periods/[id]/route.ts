@@ -1,40 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
+import { canCloseMeter, METER_ERROR_CODES } from "@/lib/meter-context";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id: idStr } = await params;
-    const id = Number(idStr);
-    const body = await req.json();
-    const { meterEnd } = body;
-    const end = Number(meterEnd);
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
 
-    const existing = await prisma.meterPeriod.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: "ไม่พบรายการ" }, { status: 404 });
-    if (end <= existing.meterStart) return NextResponse.json({ error: "มิเตอร์ปลายต้องมากกว่าต้น" }, { status: 400 });
+  const id = Number((await params).id);
+  const body = await req.json().catch(() => null) as { meterEnd?: unknown } | null;
+  const end = Number(body?.meterEnd);
+  if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(end) || end < 0) {
+    return NextResponse.json({ error: "เลขมิเตอร์ไม่ถูกต้อง", code: METER_ERROR_CODES.INVALID_INPUT }, { status: 400 });
+  }
+
+  try {
+    const existing = await prisma.meterPeriod.findUnique({
+      where: { id },
+      include: { shift: true, pump: true, fuelType: true },
+    });
+    if (!existing) return NextResponse.json({ error: "ไม่พบรายการมิเตอร์", code: "NOT_FOUND" }, { status: 404 });
+    if (!existing.shift || !existing.pump || existing.openedById === null) {
+      return NextResponse.json({ error: "รายการเก่าไม่มีข้อมูลกะหรือหัวจ่าย จึงปิดผ่านระบบใหม่ไม่ได้", code: "METER_CONTEXT_REQUIRED" }, { status: 409 });
+    }
+    if (!canCloseMeter({ actorId: auth.user.id, actorRole: auth.user.role, shiftOwnerId: existing.shift.openedById, shiftStatus: existing.shift.status, meterEnd: existing.meterEnd })) {
+      return NextResponse.json({ error: "มีเฉพาะเจ้าของกะหรือ Owner เท่านั้นที่ปิดมิเตอร์ได้", code: "METER_FORBIDDEN" }, { status: 403 });
+    }
+    if (end <= existing.meterStart) {
+      return NextResponse.json({ error: "มิเตอร์ปลายต้องมากกว่ามิเตอร์ต้น", code: METER_ERROR_CODES.INVALID_INPUT }, { status: 400 });
+    }
 
     const liters = end - existing.meterStart;
-    const totalRevenue = liters * existing.pricePerLiter;
-
     const updated = await prisma.meterPeriod.update({
       where: { id },
-      data: { meterEnd: end, liters, totalRevenue },
-      include: { fuelType: true },
+      data: {
+        meterEnd: end,
+        liters,
+        totalRevenue: liters * existing.pricePerLiter,
+        closedAt: new Date(),
+        closedById: auth.user.id,
+        closedByName: auth.user.name,
+        closedByEmail: auth.user.email,
+      },
+      include: {
+        fuelType: true,
+        pump: true,
+        shift: { select: { id: true, status: true, openedById: true, openedByName: true, closedAt: true } },
+      },
     });
     return NextResponse.json(updated);
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  } catch (error) {
+    console.error("meter-periods PATCH error:", error);
+    return NextResponse.json({ error: "ปิดมิเตอร์ไม่สำเร็จ" }, { status: 500 });
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+  const id = Number((await params).id);
+  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
+
   try {
-    const { id: idStr } = await params;
-    const id = Number(idStr);
-    if (!id) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
     await prisma.meterPeriod.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  } catch (error) {
+    console.error("meter-periods DELETE error:", error);
+    return NextResponse.json({ error: "ลบรายการมิเตอร์ไม่สำเร็จ" }, { status: 500 });
   }
 }

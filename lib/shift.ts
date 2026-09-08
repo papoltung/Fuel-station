@@ -19,8 +19,10 @@ export function canCloseShift(input: {
   actorId: number;
   openedById: number;
   status: ShiftStatus | string;
+  openMeterCount?: number;
 }) {
   if (input.status !== "open") return false;
+  if ((input.openMeterCount ?? 0) > 0) return false;
   return input.actorRole === "owner" || input.actorId === input.openedById;
 }
 

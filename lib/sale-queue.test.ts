@@ -13,7 +13,7 @@ function memoryStore(initial: PendingSale[]): SaleQueueStore & { rows: Map<strin
   };
 }
 
-const pending = (id: string, createdByAuthUserId?: string, expectedShiftId?: number): PendingSale => ({
+const pending = (id: string, createdByAuthUserId?: string, expectedShiftId?: number, expectedPumpId?: number): PendingSale => ({
   id,
   createdAt: "2026-09-07T10:00:00.000Z",
   status: "queued",
@@ -21,6 +21,7 @@ const pending = (id: string, createdByAuthUserId?: string, expectedShiftId?: num
   payload: { clientRequestId: id },
   createdByAuthUserId,
   expectedShiftId,
+  expectedPumpId,
 });
 
 test("removes a queued sale only after the server accepts it", async () => {
@@ -71,9 +72,10 @@ test("does not send a pending sale belonging to another signed-in user", async (
 });
 
 test("sends a pending sale when the verified user and original shift match", async () => {
-  const store = memoryStore([pending("sale-1", "user-a", 12)]);
+  const store = memoryStore([pending("sale-1", "user-a", 12, 2)]);
   const result = await syncPendingSales(store, async (item) => {
     assert.equal(item.expectedShiftId, 12);
+    assert.equal(item.expectedPumpId, 2);
     return { ok: true, status: 201 };
   }, "user-a");
   assert.equal(result.synced, 1);

@@ -23,16 +23,23 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   try {
     const where = { date: { gte: range.start, lt: range.end } };
     const [sales, products, purchases, periods] = await Promise.all([
-      prisma.sale.findMany({ where, include: { fuelType: true }, orderBy: { date: "asc" } }),
+      prisma.sale.findMany({ where, include: { fuelType: true, pump: true, shift: { select: { id: true, openedByName: true } } }, orderBy: { date: "asc" } }),
       prisma.productSale.findMany({ where, include: { product: true }, orderBy: { date: "asc" } }),
       prisma.fuelPurchase.findMany({ where: { date: { lt: range.end } }, orderBy: [{ date: "desc" }, { id: "desc" }], select: { fuelTypeId: true, date: true, costPerLiter: true } }),
-      prisma.meterPeriod.findMany({ where, include: { fuelType: true } }),
+      prisma.meterPeriod.findMany({ where, include: { fuelType: true, pump: true, shift: { select: { id: true, openedByName: true } } } }),
     ]);
-    const fuelIds = [...new Set([...sales.map(row => row.fuelTypeId), ...periods.map(row => row.fuelTypeId)])];
-    comparison = fuelIds.map(id => ({ id,
-      label: sales.find(row => row.fuelTypeId === id)?.fuelType.label ?? periods.find(row => row.fuelTypeId === id)!.fuelType.label,
-      ...reconcileMeter(sales.filter(row => row.fuelTypeId === id), periods.filter(row => row.fuelTypeId === id)),
-    }));
+    const contextKey = (row: { fuelTypeId: number; pumpId: number | null; shiftId: number | null }) => `${row.fuelTypeId}:${row.pumpId ?? "legacy"}:${row.shiftId ?? "legacy"}`;
+    const contextKeys = [...new Set([...sales.map(contextKey), ...periods.map(contextKey)])];
+    comparison = contextKeys.map(key => {
+      const groupedSales = sales.filter(row => contextKey(row) === key);
+      const groupedPeriods = periods.filter(row => contextKey(row) === key);
+      const sample = groupedSales[0] ?? groupedPeriods[0];
+      const pump = sample?.pump?.label ?? "หัวจ่ายเดิม";
+      const shift = sample?.shift ? `กะ #${sample.shift.id} · ${sample.shift.openedByName}` : "กะเดิม";
+      return { id: key, label: `${sample?.fuelType.label ?? "น้ำมัน"} · ${pump} · ${shift}`,
+        ...reconcileMeter(groupedSales, groupedPeriods),
+      };
+    });
     report = estimateProfit([
       ...sales.map(sale => ({ label: sale.fuelType.label, revenue: sale.totalAmount, quantity: sale.liters,
         unitCost: purchases.find(purchase => purchase.fuelTypeId === sale.fuelTypeId && purchase.date <= sale.date)?.costPerLiter ?? null })),
