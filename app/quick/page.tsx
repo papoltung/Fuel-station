@@ -98,7 +98,7 @@ export default function NewSalePage() {
     date: nowDT(),
     sellerName: "",
     fuelTypeId: "",
-    pumpNo: "1",
+    pumpNo: "",
     totalAmount: "",
     pricePerLiter: "",
     paymentMethod: "cash",
@@ -120,19 +120,6 @@ export default function NewSalePage() {
       .then((r) => r.json())
       .then((data: FuelType[]) => {
         setFuelTypes(data);
-        const firstAvailable =
-          data.find((x) => Number(x.currentPrice) > 0) ?? data[0];
-
-        if (firstAvailable) {
-          setFuelForm((f) => ({
-            ...f,
-            fuelTypeId: String(firstAvailable.id),
-            pricePerLiter:
-              Number(firstAvailable.currentPrice) > 0
-                ? String(firstAvailable.currentPrice)
-                : "",
-          }));
-        }
       })
       .catch(() => setError("โหลดข้อมูลน้ำมันไม่สำเร็จ"));
 
@@ -218,7 +205,7 @@ export default function NewSalePage() {
     [pumps, fuelForm.fuelTypeId]
   );
   const selectedPump = useMemo(
-    () => compatiblePumps.find((pump) => pump.number === fuelForm.pumpNo) ?? compatiblePumps[0],
+    () => compatiblePumps.find((pump) => pump.number === fuelForm.pumpNo),
     [compatiblePumps, fuelForm.pumpNo]
   );
 
@@ -265,6 +252,7 @@ export default function NewSalePage() {
     fuelAmount > 0 &&
     fuelPrice > 0 &&
     !!fuelForm.paymentMethod &&
+    !!selectedPump &&
     (fuelForm.paymentMethod !== "credit" ||
       !!fuelForm.customerName.trim()) &&
     !!account;
@@ -292,7 +280,9 @@ export default function NewSalePage() {
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
     if (!selectedPump)
-      return setError("กรุณาเลือกหัวจ่ายที่ตั้งค่าไว้");
+      return setError("กรุณาเลือกหัวจ่ายที่ตรงกับชนิดน้ำมัน");
+    if (selectedPump.fuelTypeId !== Number(fuelForm.fuelTypeId))
+      return setError("ชนิดน้ำมันไม่ตรงกับหัวจ่าย");
     if (
       fuelForm.paymentMethod === "credit" &&
       !fuelForm.customerName.trim()
@@ -595,11 +585,13 @@ export default function NewSalePage() {
                     type="button"
                     disabled={!available}
                     onClick={() => {
-                      setFuel("fuelTypeId", String(ft.id));
-                      setFuel(
-                        "pricePerLiter",
-                        available ? String(ft.currentPrice) : ""
-                      );
+                      setFuelForm((form) => ({
+                        ...form,
+                        fuelTypeId: String(ft.id),
+                        pricePerLiter: available ? String(ft.currentPrice) : "",
+                        pumpNo: "",
+                      }));
+                      setError("");
                     }}
                     className={`relative min-h-[92px] rounded-[22px] border p-4 text-left transition active:scale-[0.98] ${
                       active
@@ -714,26 +706,39 @@ export default function NewSalePage() {
           <section>
             <SectionTitle title="หัวจ่าย" />
 
-            <div className="grid grid-cols-4 gap-2">
-              {(compatiblePumps.length > 0 ? compatiblePumps.map((pump) => pump.number) : PUMP_OPTIONS).map((p) => {
-                const active = selectedPump?.number === p;
+            {!fuelForm.fuelTypeId ? (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-semibold text-slate-500">
+                เลือกชนิดน้ำมันด้านบนก่อน
+              </div>
+            ) : compatiblePumps.length === 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm font-semibold text-amber-800">
+                ไม่มีหัวจ่ายที่ผูกกับน้ำมันชนิดนี้
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {compatiblePumps.map((pump) => {
+                  const active = fuelForm.pumpNo === pump.number;
 
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setFuel("pumpNo", p)}
-                    className={`h-12 rounded-2xl border font-bold transition active:scale-[0.98] ${
-                      active
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      key={pump.id}
+                      type="button"
+                      onClick={() => setFuel("pumpNo", pump.number)}
+                      className={`min-h-14 rounded-2xl border px-4 text-left font-bold transition active:scale-[0.98] ${
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      <span className="block">หัวจ่าย {pump.number}</span>
+                      <span className={`mt-0.5 block text-xs font-semibold ${active ? "text-slate-300" : "text-slate-400"}`}>
+                        {selectedFuel?.label ?? ""}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {fuelForm.paymentMethod === "credit" && (
