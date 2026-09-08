@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserSaleQueue, createSaleQueueSynchronizer, type PendingSale } from "@/lib/sale-queue";
+import { resolveCachedSaleContext, type SaleContext } from "@/lib/sale-context";
 
 type FuelType = {
   id: number;
@@ -31,7 +32,7 @@ const PAYMENT_OPTIONS = [
 ];
 
 const QUICK_AMOUNTS = [40, 50, 60, 80, 100, 200, 300, 500, 1000];
-type Account = { name: string; role: "owner" | "manager" | "staff" };
+type Account = { authUserId: string; name: string; role: "owner" | "manager" | "staff" };
 
 const syncSaleQueue = createSaleQueueSynchronizer(browserSaleQueue, async (item: PendingSale) => {
     const response = await fetch("/api/sales", {
@@ -40,8 +41,55 @@ const syncSaleQueue = createSaleQueueSynchronizer(browserSaleQueue, async (item:
       body: JSON.stringify(item.payload),
     });
     const data = await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, error: data.error };
+    return { ok: response.ok, status: response.status, error: data.error, errorCode: data.code };
+}, async () => {
+  try {
+    const response = await fetch("/api/me", { cache: "no-store" });
+    if (!response.ok) return null;
+    const user = await response.json().catch(() => null);
+    return typeof user?.authUserId === "string" ? user.authUserId : null;
+  } catch {
+    return null;
+  }
 });
+
+const SALE_CONTEXT_KEY = "fuelpos-sale-context";
+
+function readCachedSaleContext(currentAuthUserId?: string | null): SaleContext | null {
+  try {
+    return resolveCachedSaleContext(
+      JSON.parse(window.localStorage.getItem(SALE_CONTEXT_KEY) ?? "null"),
+      currentAuthUserId
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSaleContext(): Promise<{
+  available: boolean;
+  context: SaleContext | null;
+}> {
+  try {
+    const [userResponse, shiftsResponse] = await Promise.all([
+      fetch("/api/me", { cache: "no-store" }),
+      fetch("/api/shifts", { cache: "no-store" }),
+    ]);
+    if (!userResponse.ok || !shiftsResponse.ok) {
+      return { available: true, context: null };
+    }
+
+    const user = await userResponse.json().catch(() => null);
+    const shifts = await shiftsResponse.json().catch(() => null);
+    const authUserId = typeof user?.authUserId === "string" ? user.authUserId : "";
+    const shiftId = Number(shifts?.currentShift?.id);
+    const context = resolveCachedSaleContext({ authUserId, shiftId }, authUserId);
+    return { available: true, context };
+  } catch {
+    // Keep the last verified context available for an actual offline sale.
+    return { available: false, context: null };
+  }
+}
 
 export default function NewSalePage() {
   const router = useRouter();
@@ -57,6 +105,7 @@ export default function NewSalePage() {
   const [queueStatus, setQueueStatus] = useState({ queued: 0, needsReview: 0 });
   const [syncing, setSyncing] = useState(false);
   const [queuedFlash, setQueuedFlash] = useState("");
+  const [verifiedSaleContext, setVerifiedSaleContext] = useState<SaleContext | null>(null);
   const [showKeypad, setShowKeypad] = useState(false);
   const [keypadAmount, setKeypadAmount] = useState("");
   const customSubmitAmount = useRef<string | null>(null);
@@ -133,6 +182,44 @@ export default function NewSalePage() {
       .catch(() => setError("โหลดข้อมูลสินค้าไม่สำเร็จ"));
 
     fetch("/api/me").then((response) => response.ok ? response.json() : null).then(setAccount);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshSaleContext = async () => {
+      const result = await fetchSaleContext();
+      if (!mounted) return;
+
+      if (result.available) {
+        setVerifiedSaleContext(result.context);
+        try {
+          if (result.context) {
+            window.localStorage.setItem(SALE_CONTEXT_KEY, JSON.stringify(result.context));
+          } else {
+            window.localStorage.removeItem(SALE_CONTEXT_KEY);
+          }
+        } catch {
+          // localStorage may be unavailable in private/restricted browser contexts.
+        }
+        return;
+      }
+
+      // Keep the in-memory context from the last verified response. Do not hydrate
+      // it from localStorage without first verifying the currently signed-in user;
+      // otherwise a different account could enqueue a sale as the previous user.
+    };
+
+    const initialContextTimer = window.setTimeout(() => {
+      void refreshSaleContext();
+    }, 0);
+    window.addEventListener("online", refreshSaleContext);
+
+    return () => {
+      mounted = false;
+      window.clearTimeout(initialContextTimer);
+      window.removeEventListener("online", refreshSaleContext);
+    };
   }, []);
 
   useEffect(() => {
@@ -264,14 +351,26 @@ export default function NewSalePage() {
 
     // Persist first, clear the form immediately, then let the queue sync in the background.
     try {
+      // Use the last server-verified context so a real offline sale can still be queued.
+      // The synchronizer and API re-verify the account and shift before sending it.
+      // A local cache is only eligible when /api/me has already verified the
+      // current account. The server still validates expectedShiftId on sync.
+      const saleContext = verifiedSaleContext ?? readCachedSaleContext(account?.authUserId);
+      if (!saleContext) {
+        setError("กรุณาเข้าสู่ระบบและเปิดกะก่อนบันทึกการขาย");
+        return;
+      }
       const id = crypto.randomUUID();
       await browserSaleQueue.put({
         id,
         createdAt: new Date().toISOString(),
         status: "queued",
         attempts: 0,
+        createdByAuthUserId: saleContext.authUserId,
+        expectedShiftId: saleContext.shiftId,
         payload: {
           clientRequestId: id,
+          expectedShiftId: saleContext.shiftId,
           ...fuelForm,
           totalAmount: amountForSubmit,
           pumpNo: `หัวจ่าย ${fuelForm.pumpNo}`,
@@ -343,6 +442,7 @@ export default function NewSalePage() {
     setLoading(true);
 
     try {
+      // Product sales are intentionally online-only; they are not placed in the fuel offline queue.
       const res = await fetch("/api/product-sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

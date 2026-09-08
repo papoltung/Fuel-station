@@ -49,6 +49,29 @@ model FuelType {
   createdAt    DateTime        @default(now())
 }
 
+model Shift {
+  id           Int           @id @default(autoincrement())
+  status       String        @default("open")
+  openedAt     DateTime      @default(now())
+  closedAt     DateTime?
+  openingCash  Float
+  cashSales    Float?
+  expectedCash Float?
+  actualCash   Float?
+  difference   Float?
+  openedById   Int
+  openedByName String
+  openedByEmail String
+  closedById   Int?
+  closedByName String?
+  closedByEmail String?
+  sales        Sale[]
+  productSales ProductSale[]
+
+  @@index([openedById, status])
+  @@index([openedAt])
+}
+
 model Sale {
   id            Int      @id @default(autoincrement())
   clientRequestId String  @unique
@@ -65,6 +88,8 @@ model Sale {
   paymentMethod String
   customerName  String?
   note          String?
+  shift         Shift?   @relation(fields: [shiftId], references: [id])
+  shiftId       Int?
   createdAt     DateTime @default(now())
 }
 
@@ -148,6 +173,8 @@ model ProductSale {
   paymentMethod String
   customerName  String?
   note          String?
+  shift         Shift?   @relation(fields: [shiftId], references: [id])
+  shiftId       Int?
   createdAt     DateTime @default(now())
 }
 

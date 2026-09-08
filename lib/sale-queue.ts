@@ -6,6 +6,8 @@ export type PendingSale = {
   status: PendingSaleStatus;
   attempts: number;
   payload: Record<string, unknown> & { clientRequestId: string };
+  createdByAuthUserId?: string;
+  expectedShiftId?: number;
   lastError?: string;
 };
 
@@ -15,23 +17,36 @@ export type SaleQueueStore = {
   remove(id: string): Promise<void>;
 };
 
-type SendResult = { ok: boolean; status: number; error?: string };
+export type SendResult = { ok: boolean; status: number; error?: string; errorCode?: string };
+
+type QueueResult = { synced: number; queued: number; needsReview: number };
+
+async function queueResult(store: SaleQueueStore): Promise<QueueResult> {
+  const remaining = await store.list();
+  return {
+    synced: 0,
+    queued: remaining.filter((item) => item.status !== "needs-review").length,
+    needsReview: remaining.filter((item) => item.status === "needs-review").length,
+  };
+}
 
 export function createSaleQueueSynchronizer(
   store: SaleQueueStore,
   send: (item: PendingSale) => Promise<SendResult>,
+  getCurrentAuthUserId?: () => Promise<string | null>,
 ) {
   let tail = Promise.resolve({ synced: 0, queued: 0, needsReview: 0 });
   return () => {
-    const run = tail.then(() => syncPendingSales(store, send));
+    const run = tail.then(async () => {
+      if (!getCurrentAuthUserId) return syncPendingSales(store, send);
+      const authUserId = await getCurrentAuthUserId();
+      // No verified session means the queue must wait; never send as an unknown user.
+      if (!authUserId) return queueResult(store);
+      return syncPendingSales(store, send, authUserId);
+    });
     // Keep the chain usable after a truly unexpected failure.
     tail = run.catch(async () => {
-      const remaining = await store.list();
-      return {
-        synced: 0,
-        queued: remaining.filter((item) => item.status !== "needs-review").length,
-        needsReview: remaining.filter((item) => item.status === "needs-review").length,
-      };
+      return queueResult(store);
     });
     return run;
   };
@@ -40,10 +55,15 @@ export function createSaleQueueSynchronizer(
 export async function syncPendingSales(
   store: SaleQueueStore,
   send: (item: PendingSale) => Promise<SendResult>,
+  currentAuthUserId?: string,
 ) {
   const items = (await store.list()).filter((item) => item.status !== "needs-review");
   let synced = 0;
   for (const item of items) {
+    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedShiftId !== "number" || !Number.isInteger(item.expectedShiftId) || item.expectedShiftId <= 0)) {
+      await store.put({ ...item, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" });
+      continue;
+    }
     await store.put({ ...item, status: "sending" });
     try {
       const result = await send(item);
@@ -54,7 +74,7 @@ export async function syncPendingSales(
         await store.put({
           ...item,
           attempts: item.attempts + 1,
-          status: result.status >= 400 && result.status < 500 ? "needs-review" : "queued",
+          status: result.errorCode === "NO_OPEN_SHIFT" ? "queued" : result.status >= 400 && result.status < 500 ? "needs-review" : "queued",
           lastError: result.error ?? `HTTP ${result.status}`,
         });
       }

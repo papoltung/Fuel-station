@@ -25,6 +25,7 @@ const NAV = [
   { href: "/stock", icon: "◇", label: "สต็อก" },
   { href: "/meter", icon: "◴", label: "มิเตอร์" },
   { href: "/cash", icon: "▣", label: "นับเงิน" },
+  { href: "/shifts", icon: "◷", label: "กะทำงาน" },
   { href: "/settings/products", icon: "□", label: "สินค้า" },
   { href: "/reports", icon: "▥", label: "รายงาน" },
 ];
@@ -188,8 +189,8 @@ export default function DashboardPage() {
       </main>
 
       <nav aria-label="เมนูหลัก" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5">{[
-          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "♙", label: "บัญชี" },
+        <div className={`mx-auto grid max-w-lg ${roleCode === "owner" ? "grid-cols-6" : "grid-cols-4"}`}>{[
+          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/shifts", icon: "◷", label: "กะ" }, { href: "/settings", icon: "♙", label: "บัญชี" },
         ].filter(item => !["/reports", "/stock"].includes(item.href) || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
       </nav>
     </div>
