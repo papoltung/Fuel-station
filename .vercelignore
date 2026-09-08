@@ -1,0 +1,11 @@
+.git
+.next
+.next-*
+node_modules
+.playwright-cli
+.env*
+paper-analysis-skill
+*_analysis*.md
+obsidian_analysis_append.md
+updated_paper_analysis_skill.md
+prisma/fix-timezone.ts
