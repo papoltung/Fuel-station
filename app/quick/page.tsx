@@ -281,7 +281,8 @@ export default function NewSalePage() {
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
     if (!selectedPump)
       return setError("กรุณาเลือกหัวจ่ายที่ตรงกับชนิดน้ำมัน");
-    if (selectedPump.fuelTypeId !== Number(fuelForm.fuelTypeId))
+    const pump = selectedPump;
+    if (pump.fuelTypeId !== Number(fuelForm.fuelTypeId))
       return setError("ชนิดน้ำมันไม่ตรงกับหัวจ่าย");
     if (
       fuelForm.paymentMethod === "credit" &&
@@ -302,14 +303,14 @@ export default function NewSalePage() {
         status: "queued",
         attempts: 0,
         createdByAuthUserId: account.authUserId,
-        expectedPumpId: selectedPump.id,
+        expectedPumpId: pump.id,
         payload: {
           clientRequestId: id,
-          expectedPumpId: selectedPump.id,
-          pumpId: selectedPump.id,
+          expectedPumpId: pump.id,
+          pumpId: pump.id,
           ...fuelForm,
           totalAmount: amountForSubmit,
-          pumpNo: `หัวจ่าย ${selectedPump.number}`,
+          pumpNo: `หัวจ่าย ${pump.number}`,
           date: fuelForm.date + "+07:00",
         },
       });
@@ -339,9 +340,9 @@ export default function NewSalePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientRequestId: crypto.randomUUID(),
-          pumpId: selectedPump.id,
+          pumpId: pump.id,
           ...fuelForm,
-          pumpNo: `หัวจ่าย ${selectedPump.number}`,
+          pumpNo: `หัวจ่าย ${pump.number}`,
           date: fuelForm.date + "+07:00",
         }),
       });
