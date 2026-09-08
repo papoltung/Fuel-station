@@ -104,9 +104,6 @@ export async function GET(req: NextRequest) {
     byFuel[key].profit += s.totalAmount - s.liters * avgCost;
   }
 
-  const fuelCost = Object.values(byFuel).reduce((a, f) => a + f.cost, 0);
-  const totalCost = fuelCost;
-  const totalProfit = totalRevenue - totalCost;
 
   const byPayment = { cash: 0, transfer: 0, credit: 0 } as Record<string, number>;
   const fuelByPayment = { cash: 0, transfer: 0, credit: 0 } as Record<string, number>;
@@ -129,9 +126,7 @@ export async function GET(req: NextRequest) {
     fuelRevenue,
     productRevenue,
     totalLiters,
-    totalCost,
-    totalProfit,
-    byFuel,
+    byFuel: Object.fromEntries(Object.entries(byFuel).map(([key, value]) => [key, { label: value.label, liters: value.liters, revenue: value.revenue }])),
     byPayment,
     fuelByPayment,
     productByPayment,

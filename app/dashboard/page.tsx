@@ -25,7 +25,7 @@ const NAV = [
   { href: "/meter", icon: "◴", label: "มิเตอร์" },
   { href: "/cash", icon: "▣", label: "นับเงิน" },
   { href: "/settings/products", icon: "□", label: "สินค้า" },
-  { href: "/dashboard", icon: "▥", label: "รายงาน" },
+  { href: "/reports", icon: "▥", label: "รายงาน" },
 ];
 const FUEL_STYLE: Record<string, { dot: string; bar: string; soft: string }> = {
   benzin91: { dot: "bg-emerald-500", bar: "bg-emerald-500", soft: "bg-emerald-50 text-emerald-700" },
@@ -108,7 +108,7 @@ export default function DashboardPage() {
         </div>
         <nav aria-label="เมนูระบบ" className="flex-1 space-y-1 px-3 py-4">
           <p className="px-4 pb-2 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">Main</p>
-          {NAV.map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-bold ${index === 0 ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}><span className="w-5 text-center text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
+          {NAV.filter(item => item.href !== "/reports" || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-bold ${index === 0 ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}><span className="w-5 text-center text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
         </nav>
         <div className="border-t border-slate-200 p-4">
           <p className="px-3 pb-1 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">System</p>
@@ -181,8 +181,8 @@ export default function DashboardPage() {
 
       <nav aria-label="เมนูหลัก" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
         <div className="mx-auto grid max-w-lg grid-cols-5">{[
-          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/dashboard", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "♙", label: "บัญชี" },
-        ].map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
+          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "♙", label: "บัญชี" },
+        ].filter(item => item.href !== "/reports" || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
       </nav>
     </div>
   );
