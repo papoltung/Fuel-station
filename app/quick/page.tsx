@@ -217,14 +217,16 @@ export default function NewSalePage() {
       (pump) => pump.isActive && pump.fuelTypeId === ft.id
     );
 
+    const autoPump = matchingPumps[0];
+
     setFuelForm((form) => ({
       ...form,
       fuelTypeId: String(ft.id),
       pricePerLiter: String(ft.currentPrice),
-      pumpNo: matchingPumps.length === 1 ? matchingPumps[0].number : "",
+      pumpNo: autoPump?.number ?? "",
     }));
 
-    if (matchingPumps.length === 0) {
+    if (!autoPump) {
       setError(`ไม่มีหัวจ่ายที่ตั้งค่าไว้สำหรับ ${ft.label}`);
     } else {
       setError("");
@@ -240,21 +242,12 @@ export default function NewSalePage() {
         pump.fuelTypeId === Number(fuelForm.fuelTypeId)
     );
 
+    const autoPump = matchingPumps[0];
+
     setFuelForm((form) => {
-      if (matchingPumps.length === 1) {
-        if (form.pumpNo === matchingPumps[0].number) return form;
-        return { ...form, pumpNo: matchingPumps[0].number };
-      }
-
-      if (
-        matchingPumps.length > 1 &&
-        matchingPumps.some((pump) => pump.number === form.pumpNo)
-      ) {
-        return form;
-      }
-
-      if (form.pumpNo === "") return form;
-      return { ...form, pumpNo: "" };
+      const nextPumpNo = autoPump?.number ?? "";
+      if (form.pumpNo === nextPumpNo) return form;
+      return { ...form, pumpNo: nextPumpNo };
     });
   }, [pumps, fuelForm.fuelTypeId]);
 
@@ -679,9 +672,9 @@ export default function NewSalePage() {
               })}
             </div>
 
-            {fuelForm.fuelTypeId && compatiblePumps.length === 1 && selectedPump && (
-              <p className="mt-2 text-xs font-semibold text-slate-500">
-                หัวจ่าย {selectedPump.number} · {selectedFuel?.label ?? ""}
+            {fuelForm.fuelTypeId && selectedPump && (
+              <p className="mt-2 text-xs font-semibold text-slate-400">
+                ระบบเลือกหัวจ่าย {selectedPump.number} อัตโนมัติ
               </p>
             )}
 
@@ -769,32 +762,7 @@ export default function NewSalePage() {
             />
           </section>
 
-          {compatiblePumps.length > 1 && (
-            <section>
-              <SectionTitle title="หัวจ่าย" />
 
-              <div className="grid grid-cols-4 gap-2">
-                {compatiblePumps.map((pump) => {
-                  const active = fuelForm.pumpNo === pump.number;
-
-                  return (
-                    <button
-                      key={pump.id}
-                      type="button"
-                      onClick={() => setFuel("pumpNo", pump.number)}
-                      className={`h-12 rounded-2xl border font-bold transition active:scale-[0.98] ${
-                        active
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-700"
-                      }`}
-                    >
-                      {pump.number}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
 
           {fuelForm.paymentMethod === "credit" && (
             <section>
