@@ -35,8 +35,8 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       const groupedPeriods = periods.filter(row => contextKey(row) === key);
       const sample = groupedSales[0] ?? groupedPeriods[0];
       const pump = sample?.pump?.label ?? "หัวจ่ายเดิม";
-      const shift = sample?.shift ? `กะ #${sample.shift.id} · ${sample.shift.openedByName}` : "กะเดิม";
-      return { id: key, label: `${sample?.fuelType.label ?? "น้ำมัน"} · ${pump} · ${shift}`,
+      const period = sample?.shift ? `ข้อมูลเดิม #${sample.shift.id} · ${sample.shift.openedByName}` : "ไม่แบ่งกะ";
+      return { id: key, label: `${sample?.fuelType.label ?? "น้ำมัน"} · ${pump} · ${period}`,
         ...reconcileMeter(groupedSales, groupedPeriods),
       };
     });

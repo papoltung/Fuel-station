@@ -22,7 +22,6 @@ function parseDate(value: unknown) {
 
 function meterErrorMessage(code: string) {
   switch (code) {
-    case METER_ERROR_CODES.EXPECTED_SHIFT_NOT_OPEN: return "กะอ้างอิงไม่ใช่กะที่เปิดอยู่ของบัญชีนี้";
     case METER_ERROR_CODES.PUMP_NOT_FOUND: return "ไม่พบหัวจ่ายหรือหัวจ่ายถูกปิดใช้งาน";
     case METER_ERROR_CODES.PUMP_FUEL_NOT_CONFIGURED: return "หัวจ่ายนี้ยังไม่ได้ตั้งค่าชนิดน้ำมัน";
     case METER_ERROR_CODES.METER_FUEL_MISMATCH: return "ชนิดน้ำมันไม่ตรงกับหัวจ่ายที่ตั้งค่าไว้";
@@ -42,7 +41,12 @@ export async function GET(req: NextRequest) {
       lte: new Date(`${date}T23:59:59.999+07:00`),
     },
   } : {};
-  const ownerWhere = auth.user.role === "owner" ? {} : { shift: { openedById: auth.user.id } };
+  const ownerWhere = auth.user.role === "owner" ? {} : {
+    OR: [
+      { openedById: auth.user.id },
+      { shift: { openedById: auth.user.id } },
+    ],
+  };
 
   try {
     const periods = await prisma.meterPeriod.findMany({
@@ -73,22 +77,12 @@ export async function POST(req: NextRequest) {
   const pricePerLiter = parsePositive(body?.pricePerLiter);
   const meterEnd = body?.meterEnd !== undefined && body.meterEnd !== "" ? Number(body.meterEnd) : null;
   const date = parseDate(body?.date);
-  const expectedShiftId = body?.expectedShiftId === undefined ? undefined : Number(body.expectedShiftId);
 
   if (!fuelTypeId || !Number.isInteger(fuelTypeId) || !pumpId || !Number.isInteger(pumpId) || meterStart === null || !pricePerLiter || !date || (meterEnd !== null && (!Number.isFinite(meterEnd) || meterEnd <= meterStart))) {
     return NextResponse.json({ error: "ข้อมูลมิเตอร์ไม่ครบหรือไม่ถูกต้อง", code: METER_ERROR_CODES.INVALID_INPUT }, { status: 400 });
   }
-  if (expectedShiftId !== undefined && (!Number.isInteger(expectedShiftId) || expectedShiftId <= 0)) {
-    return NextResponse.json({ error: "กะอ้างอิงไม่ถูกต้อง", code: METER_ERROR_CODES.EXPECTED_SHIFT_INVALID }, { status: 400 });
-  }
-
   try {
     const period = await prisma.$transaction(async (tx) => {
-      const shift = expectedShiftId
-        ? await tx.shift.findUnique({ where: { id: expectedShiftId } })
-        : await tx.shift.findFirst({ where: { openedById: auth.user.id, status: "open" }, orderBy: { openedAt: "desc" } });
-      if (!shift || shift.status !== "open" || shift.openedById !== auth.user.id) throw new Error(METER_ERROR_CODES.EXPECTED_SHIFT_NOT_OPEN);
-
       const pump = await tx.pump.findUnique({ where: { id: pumpId } });
       if (!pump || !pump.isActive) throw new Error(METER_ERROR_CODES.PUMP_NOT_FOUND);
       const fuelMatch = validatePumpFuel({ configuredFuelTypeId: pump.fuelTypeId, requestedFuelTypeId: fuelTypeId });
@@ -103,7 +97,7 @@ export async function POST(req: NextRequest) {
           date,
           fuelTypeId,
           pumpId,
-          shiftId: shift.id,
+          shiftId: null,
           meterStart,
           meterEnd,
           liters,

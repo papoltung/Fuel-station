@@ -7,6 +7,7 @@ export type PendingSale = {
   attempts: number;
   payload: Record<string, unknown> & { clientRequestId: string };
   createdByAuthUserId?: string;
+  // Retained only so sales queued by older app versions remain readable.
   expectedShiftId?: number;
   expectedPumpId?: number;
   lastError?: string;
@@ -72,7 +73,7 @@ export async function syncPendingSales(
   const items = (await store.list()).filter((item) => item.status !== "needs-review");
   let synced = 0;
   for (const item of items) {
-    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedShiftId !== "number" || !Number.isInteger(item.expectedShiftId) || item.expectedShiftId <= 0 || typeof item.expectedPumpId !== "number" || !Number.isInteger(item.expectedPumpId) || item.expectedPumpId <= 0)) {
+    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedPumpId !== "number" || !Number.isInteger(item.expectedPumpId) || item.expectedPumpId <= 0)) {
       await store.put({ ...item, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" });
       continue;
     }
@@ -86,7 +87,7 @@ export async function syncPendingSales(
         await store.put({
           ...item,
           attempts: item.attempts + 1,
-          status: result.errorCode === "NO_OPEN_SHIFT" ? "queued" : result.status >= 400 && result.status < 500 ? "needs-review" : "queued",
+          status: result.status >= 400 && result.status < 500 ? "needs-review" : "queued",
           lastError: result.error ?? `HTTP ${result.status}`,
         });
       }

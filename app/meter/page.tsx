@@ -39,8 +39,6 @@ type Sale = {
 };
 
 type Pump = { id: number; number: string; label: string; isActive: boolean };
-type Shift = { id: number; status: string; openedByName: string; openedAt: string; closedAt: string | null };
-
 function fmt(n: number) {
   return Number(n || 0).toLocaleString("th-TH", {
     maximumFractionDigits: 0,
@@ -91,7 +89,6 @@ export default function MeterPage() {
 
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [pumps, setPumps] = useState<Pump[]>([]);
-  const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [periods, setPeriods] = useState<MeterPeriod[]>([]);
   const [allSales, setAllSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,10 +115,9 @@ export default function MeterPage() {
     Promise.all([
       fetch("/api/fuel-types").then((r) => r.json()).catch(() => []),
       fetch("/api/pumps").then((r) => r.json()).catch(() => []),
-      fetch("/api/shifts", { cache: "no-store" }).then((r) => r.json()).catch(() => ({})),
       fetch("/api/meter-periods").then((r) => r.json()).catch(() => []),
       fetch("/api/sales").then((r) => r.json()).catch(() => []),
-    ]).then(([ft, pumpRows, shiftData, mp, sl]) => {
+    ]).then(([ft, pumpRows, mp, sl]) => {
       const allFuel = (ft as FuelType[]) ?? [];
       const filtered = allFuel.filter((f) =>
         ["diesel", "benzin95"].includes(f.name)
@@ -132,7 +128,6 @@ export default function MeterPage() {
       setFuelTypes(useFuel);
       const allPumps = Array.isArray(pumpRows) ? pumpRows as Pump[] : [];
       setPumps(allPumps);
-      setCurrentShift(shiftData?.currentShift ?? null);
       setPeriods(mp ?? []);
       setAllSales(sl ?? []);
 
@@ -173,7 +168,7 @@ export default function MeterPage() {
       const res = await fetch("/api/meter-periods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, pumpId: Number(form.pumpId), expectedShiftId: currentShift?.id }),
+        body: JSON.stringify({ ...form, pumpId: Number(form.pumpId) }),
       });
 
       const data = await res.json();
@@ -281,7 +276,7 @@ export default function MeterPage() {
           pumpId: p.pumpId,
           pumpLabel: p.pump?.label ?? "หัวจ่ายเดิม",
           shiftId: p.shiftId,
-          shiftName: p.shift ? `กะ #${p.shift.id} · ${p.shift.openedByName}` : "ข้อมูลกะเดิม",
+          shiftName: p.shift ? `ข้อมูลเดิม #${p.shift.id} · ${p.shift.openedByName}` : "รอบปัจจุบัน",
           periods: [],
           meterLiters: 0,
           meterRevenue: 0,
@@ -371,9 +366,8 @@ export default function MeterPage() {
 
             <button
               onClick={() => setShowForm(true)}
-              disabled={!currentShift}
-              title={currentShift ? "เปิดรอบมิเตอร์ในกะปัจจุบัน" : "ต้องเปิดกะก่อน"}
-              className="mb-1 h-11 rounded-2xl bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+              title="เปิดรอบมิเตอร์"
+              className="mb-1 h-11 rounded-2xl bg-blue-600 px-4 text-sm font-bold text-white shadow-lg shadow-blue-600/20"
             >
               + เปิดรอบ
             </button>
@@ -694,7 +688,7 @@ export default function MeterPage() {
 
               <form onSubmit={handleSubmit} className="mt-5 space-y-4">
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold text-slate-500">หัวจ่าย · กะปัจจุบัน</span>
+                  <span className="mb-2 block text-xs font-bold text-slate-500">หัวจ่าย</span>
                   <select
                     value={form.pumpId}
                     onChange={(e) => setForm((f) => ({ ...f, pumpId: e.target.value }))}
@@ -704,9 +698,6 @@ export default function MeterPage() {
                     <option value="">เลือกหัวจ่าย</option>
                     {pumps.map((pump) => <option key={pump.id} value={pump.id}>{pump.label}</option>)}
                   </select>
-                  <span className="mt-1 block text-xs text-slate-400">
-                    {currentShift ? `กะ #${currentShift.id} · เปิดโดย ${currentShift.openedByName}` : "ยังไม่มีกะที่เปิดอยู่"}
-                  </span>
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   {fuelTypes.map((ft) => {

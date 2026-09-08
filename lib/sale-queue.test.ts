@@ -59,20 +59,6 @@ test("manual retry requeues needs-review sales so the server is called again", a
   assert.equal(store.rows.size, 0);
 });
 
-test("keeps a sale queued when its user has not opened a shift yet", async () => {
-  const store = memoryStore([pending("sale-1")]);
-  const result = await syncPendingSales(store, async () => ({
-    ok: false,
-    status: 409,
-    error: "กรุณาเปิดกะก่อนบันทึกการขาย",
-    errorCode: "NO_OPEN_SHIFT",
-  }));
-  assert.equal(store.rows.get("sale-1")?.status, "queued");
-  assert.equal(store.rows.get("sale-1")?.attempts, 1);
-  assert.equal(result.queued, 1);
-  assert.equal(result.needsReview, 0);
-});
-
 test("does not send a pending sale belonging to another signed-in user", async () => {
   const store = memoryStore([pending("sale-1", "user-a")]);
   let sent = false;
@@ -85,13 +71,25 @@ test("does not send a pending sale belonging to another signed-in user", async (
   assert.equal(result.needsReview, 1);
 });
 
-test("sends a pending sale when the verified user and original shift match", async () => {
+test("still sends a legacy pending sale that contains shift context", async () => {
   const store = memoryStore([pending("sale-1", "user-a", 12, 2)]);
   const result = await syncPendingSales(store, async (item) => {
     assert.equal(item.expectedShiftId, 12);
     assert.equal(item.expectedPumpId, 2);
     return { ok: true, status: 201 };
   }, "user-a");
+  assert.equal(result.synced, 1);
+  assert.equal(store.rows.size, 0);
+});
+
+test("sends an authenticated pending sale without shift context", async () => {
+  const store = memoryStore([pending("sale-1", "user-a", undefined, 2)]);
+  let sent = false;
+  const result = await syncPendingSales(store, async () => {
+    sent = true;
+    return { ok: true, status: 201 };
+  }, "user-a");
+  assert.equal(sent, true);
   assert.equal(result.synced, 1);
   assert.equal(store.rows.size, 0);
 });

@@ -33,8 +33,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const sale = await prisma.$transaction(async (tx) => {
-      const shift = await tx.shift.findFirst({ where: { openedById: auth.user.id, status: "open" }, orderBy: { openedAt: "desc" } });
-      if (!shift) throw new Error("NO_OPEN_SHIFT");
       const product = await tx.product.findUnique({ where: { id: productId }, select: { costPrice: true, currentStock: true } });
       if (!product || product.currentStock < quantity) throw new Error(PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK);
       const created = await tx.productSale.create({
@@ -49,7 +47,7 @@ export async function POST(req: NextRequest) {
           customerName: customerName?.trim() || null,
           note: note?.trim() || null,
           date: date ? new Date(date) : new Date(),
-          shiftId: shift.id,
+          shiftId: null,
         },
         include: { product: true },
       });
@@ -58,7 +56,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(sale, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "NO_OPEN_SHIFT") return NextResponse.json({ error: "กรุณาเปิดกะก่อนบันทึกการขาย", code: "NO_OPEN_SHIFT" }, { status: 409 });
     if (error instanceof Error && error.message === PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK) return NextResponse.json({ error: "สินค้าไม่พอ", code: PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK }, { status: 409 });
     console.error("product-sales POST error:", error);
     return NextResponse.json({ error: "บันทึกการขายสินค้าไม่สำเร็จ" }, { status: 500 });

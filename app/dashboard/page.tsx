@@ -25,7 +25,6 @@ const NAV = [
   { href: "/stock", icon: "◇", label: "สต็อก" },
   { href: "/meter", icon: "◴", label: "มิเตอร์" },
   { href: "/cash", icon: "▣", label: "นับเงิน" },
-  { href: "/shifts", icon: "◷", label: "กะทำงาน" },
   { href: "/settings/products", icon: "□", label: "สินค้า" },
   { href: "/reports", icon: "▥", label: "รายงาน" },
 ];
@@ -165,7 +164,7 @@ export default function DashboardPage() {
               { icon: "▥", label: "ยอดขายวันนี้", value: `฿ ${money(summary?.totalRevenue ?? 0)}`, detail: trend(summary?.totalRevenue ?? 0, summary?.previousRevenue ?? 0), accent: "bg-blue-50 text-blue-600" },
               { icon: "💧", label: "ปริมาณขาย", value: `${number(summary?.totalLiters ?? 0)} L`, detail: trend(summary?.totalLiters ?? 0, summary?.previousLiters ?? 0), accent: "bg-blue-50 text-blue-600" },
               { icon: "▤", label: "จำนวนรายการ", value: money((summary?.count ?? 0) + (summary?.productCount ?? 0)), detail: trend((summary?.count ?? 0) + (summary?.productCount ?? 0), summary?.previousCount ?? 0), accent: "bg-indigo-50 text-indigo-600" },
-              { icon: "฿", label: "เงินสดในกะ", value: `฿ ${money(summary?.byPayment?.cash ?? 0)}`, detail: "เฉพาะรายการชำระเงินสด", accent: "bg-emerald-50 text-emerald-600" },
+              { icon: "฿", label: "ยอดขายเงินสด", value: `฿ ${money(summary?.byPayment?.cash ?? 0)}`, detail: "เฉพาะรายการชำระเงินสด", accent: "bg-emerald-50 text-emerald-600" },
             ].map((stat) => <article key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-4"><span className={`grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black ${stat.accent}`} aria-hidden="true">{stat.icon}</span><div className="min-w-0"><p className="text-sm font-semibold text-slate-500">{stat.label}</p><p className="mt-1 text-2xl font-black tabular-nums">{stat.value}</p><p className={`mt-2 text-xs font-semibold ${stat.detail.startsWith("↑") ? "text-emerald-600" : stat.detail.startsWith("↓") ? "text-red-500" : "text-slate-400"}`}>{stat.detail}</p></div></div></article>)}
           </section>
 
@@ -189,8 +188,8 @@ export default function DashboardPage() {
       </main>
 
       <nav aria-label="เมนูหลัก" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className={`mx-auto grid max-w-lg ${roleCode === "owner" ? "grid-cols-6" : "grid-cols-4"}`}>{[
-          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/shifts", icon: "◷", label: "กะ" }, { href: "/settings", icon: "♙", label: "บัญชี" },
+        <div className={`mx-auto grid max-w-lg ${roleCode === "owner" ? "grid-cols-5" : "grid-cols-3"}`}>{[
+          { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "♙", label: "บัญชี" },
         ].filter(item => !["/reports", "/stock"].includes(item.href) || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
       </nav>
     </div>
