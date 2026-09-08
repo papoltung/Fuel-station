@@ -119,6 +119,7 @@ export default function NewSalePage() {
   const [keypadAmount, setKeypadAmount] = useState("");
   const customSubmitAmount = useRef<string | null>(null);
   const fuelFormRef = useRef<HTMLFormElement>(null);
+  const backgroundSyncTimer = useRef<number | null>(null);
 
   // product-shop UX
   const [productSearch, setProductSearch] = useState("");
@@ -249,8 +250,11 @@ export default function NewSalePage() {
     };
     void refreshQueue();
     window.addEventListener("online", refreshQueue);
-    const retryTimer = window.setInterval(refreshQueue, 10_000);
-    return () => { mounted = false; window.removeEventListener("online", refreshQueue); window.clearInterval(retryTimer); };
+    return () => {
+      mounted = false;
+      window.removeEventListener("online", refreshQueue);
+      if (backgroundSyncTimer.current !== null) window.clearTimeout(backgroundSyncTimer.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -404,7 +408,9 @@ export default function NewSalePage() {
       setQueueStatus((value) => ({ ...value, queued: value.queued + 1 }));
       setFuelForm((form) => ({ ...form, date: nowDT(), totalAmount: "", customerName: "" }));
       window.setTimeout(() => setQueuedFlash(""), 3500);
-      window.setTimeout(() => {
+      if (backgroundSyncTimer.current !== null) window.clearTimeout(backgroundSyncTimer.current);
+      backgroundSyncTimer.current = window.setTimeout(() => {
+        backgroundSyncTimer.current = null;
         setSyncing(true);
         void syncSaleQueue()
           .then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError }))
@@ -610,7 +616,7 @@ export default function NewSalePage() {
                 {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">{queueStatus.lastError || `มี ${queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล`}</p>}
               </div>
               {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-                <button type="button" disabled={syncing} onClick={() => { setSyncing(true); void retryNeedsReview(browserSaleQueue).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
+                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void retryNeedsReview(browserSaleQueue).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
               )}
             </div>
           </div>
