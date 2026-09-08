@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "@/lib/supabase/config";
+import { prisma } from "@/lib/prisma";
+import { isOwnerStockPath } from "@/lib/stock-access";
 
 export async function proxy(request: NextRequest) {
   const oauthCode = request.nextUrl.searchParams.get("code");
@@ -35,6 +37,18 @@ export async function proxy(request: NextRequest) {
   if (!user && isApi) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
   if (!user && !isLogin) return NextResponse.redirect(loginUrl);
   if (user && isLogin) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (user && isOwnerStockPath(request.nextUrl.pathname)) {
+    try {
+      const account = await prisma.appUser.findUnique({ where: { authUserId: user.id }, select: { role: true } });
+      if (account?.role !== "owner") {
+        return isApi
+          ? NextResponse.json({ error: "สต็อกเข้าถึงได้เฉพาะ Owner" }, { status: 403, headers: { "Cache-Control": "private, no-store" } })
+          : NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+    } catch {
+      return NextResponse.json({ error: "ไม่สามารถตรวจสอบสิทธิ์ได้ กรุณาลองใหม่" }, { status: 503 });
+    }
+  }
   return response;
 }
 

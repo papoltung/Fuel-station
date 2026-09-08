@@ -83,7 +83,7 @@ export default function DashboardPage() {
     };
     Promise.all([
       read(`/api/sales/summary?date=${date}`),
-      read("/api/fuel-stock"),
+      roleCode === "owner" ? read("/api/fuel-stock") : Promise.resolve([]),
       read(`/api/sales?date=${date}`),
       read(`/api/meter-periods?date=${date}`),
     ]).then(([summaryData, stockData, saleData, meterData]) => {
@@ -95,7 +95,7 @@ export default function DashboardPage() {
     }).catch(() => { if (!controller.signal.aborted) setError("โหลดข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [date, retry]);
+  }, [date, retry, roleCode]);
 
   const totalStock = stocks.reduce((sum, item) => sum + Math.max(0, item.currentLiters), 0);
 
@@ -108,7 +108,7 @@ export default function DashboardPage() {
         </div>
         <nav aria-label="เมนูระบบ" className="flex-1 space-y-1 px-3 py-4">
           <p className="px-4 pb-2 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">Main</p>
-          {NAV.filter(item => item.href !== "/reports" || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-bold ${index === 0 ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}><span className="w-5 text-center text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
+          {NAV.filter(item => !["/reports", "/stock"].includes(item.href) || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-bold ${index === 0 ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}><span className="w-5 text-center text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}
         </nav>
         <div className="border-t border-slate-200 p-4">
           <p className="px-3 pb-1 text-[10px] font-black uppercase tracking-[.16em] text-slate-400">System</p>
@@ -160,7 +160,7 @@ export default function DashboardPage() {
             ].map((stat) => <article key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-4"><span className={`grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black ${stat.accent}`} aria-hidden="true">{stat.icon}</span><div className="min-w-0"><p className="text-sm font-semibold text-slate-500">{stat.label}</p><p className="mt-1 text-2xl font-black tabular-nums">{stat.value}</p><p className={`mt-2 text-xs font-semibold ${stat.detail.startsWith("↑") ? "text-emerald-600" : stat.detail.startsWith("↓") ? "text-red-500" : "text-slate-400"}`}>{stat.detail}</p></div></div></article>)}
           </section>
 
-          <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_.8fr]">
+          {roleCode === "owner" && <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_.8fr]">
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-black">น้ำมันคงเหลือ</h2><p className="text-sm text-slate-500">รวม {number(totalStock)} ลิตร</p></div><Link href="/stock" className="text-sm font-bold text-blue-600">ดูทั้งหมด →</Link></div>
               {stocks.length === 0 ? <div className="py-8 text-center"><p className="text-sm text-slate-400">ยังไม่มีข้อมูลสต็อก</p><Link href="/stock" className="mt-3 inline-grid min-h-11 place-items-center rounded-xl bg-blue-50 px-4 text-sm font-bold text-blue-700">เพิ่มข้อมูลสต็อก</Link></div> : <div className="space-y-5">{stocks.map((item) => { const style = FUEL_STYLE[item.fuelType.name] ?? FUEL_STYLE.diesel; const capacity = 3000; const percent = Math.max(0, Math.min(100, item.currentLiters / capacity * 100)); const low = percent < 25; return <div key={item.fuelTypeId}><div className="mb-2 flex items-end justify-between"><div className="flex items-center gap-2"><span className={`size-3 rounded-full ${style.dot}`} /><span className="font-bold">{item.fuelType.label}</span>{low && <span className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-600">ใกล้หมด</span>}</div><p className="text-xl font-black tabular-nums">{number(item.currentLiters)} L</p></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${low ? "bg-red-500" : style.bar}`} style={{ width: `${percent}%` }} /></div><div className="mt-1 flex justify-between text-xs text-slate-400"><span>จากความจุอ้างอิง {money(capacity)} L</span><span className="font-bold text-slate-600">{Math.round(percent)}%</span></div></div>; })}</div>}
@@ -170,7 +170,7 @@ export default function DashboardPage() {
               <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-black">สถานะหัวจ่าย</h2><Link href="/meter" className="text-sm font-bold text-blue-600">ดูทั้งหมด →</Link></div>
               <div className="divide-y divide-slate-100">{stocks.map((stock, index) => { const open = meters.some((meter) => meter.fuelType.name === stock.fuelType.name && meter.meterEnd === null); return <div key={stock.fuelTypeId} className="flex min-h-14 items-center gap-3"><span className={`size-2.5 rounded-full ${open ? "bg-emerald-500" : "bg-slate-300"}`} /><span className="font-bold">หัวจ่าย {index + 1}</span><span className="ml-auto text-sm text-slate-500">{stock.fuelType.label}</span><span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${open ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{open ? "ใช้งาน" : "ว่าง"}</span></div>; })}</div>
             </section>
-          </div>
+          </div>}
 
           <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-black">การขายล่าสุด</h2><span className="text-sm text-slate-400">{sales.length} รายการ</span></div>
@@ -182,7 +182,7 @@ export default function DashboardPage() {
       <nav aria-label="เมนูหลัก" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
         <div className="mx-auto grid max-w-lg grid-cols-5">{[
           { href: "/dashboard", icon: "⌂", label: "หน้าหลัก" }, { href: "/quick", icon: "⛽", label: "ขาย" }, { href: "/stock", icon: "◇", label: "สต็อก" }, { href: "/reports", icon: "▥", label: "รายงาน" }, { href: "/settings", icon: "♙", label: "บัญชี" },
-        ].filter(item => item.href !== "/reports" || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
+        ].filter(item => !["/reports", "/stock"].includes(item.href) || roleCode === "owner").map((item, index) => <Link key={`${item.href}-${item.label}`} href={item.href} aria-current={index === 0 ? "page" : undefined} className={`grid min-h-16 place-items-center content-center gap-0.5 text-xs font-bold ${index === 0 ? "text-blue-600" : "text-slate-500"}`}><span className="text-xl" aria-hidden="true">{item.icon}</span>{item.label}</Link>)}</div>
       </nav>
     </div>
   );
