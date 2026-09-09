@@ -23,6 +23,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!existing.pump || existing.openedById === null) {
       return NextResponse.json({ error: "รายการเก่าไม่มีข้อมูลผู้เปิดหรือหัวจ่าย จึงปิดรายการไม่ได้", code: "METER_CONTEXT_REQUIRED" }, { status: 409 });
     }
+    if (existing.meterEnd !== null || existing.shift?.status === "closed") {
+      return NextResponse.json({ error: "รอบมิเตอร์นี้ปิดไปแล้ว กรุณาโหลดหน้าใหม่", code: "METER_ALREADY_CLOSED" }, { status: 409 });
+    }
     if (!canCloseMeter({ actorId: auth.user.id, actorRole: auth.user.role, openedById: existing.openedById, shiftOwnerId: existing.shift?.openedById, shiftStatus: existing.shift?.status, meterEnd: existing.meterEnd })) {
       return NextResponse.json({ error: "มีเฉพาะผู้เปิดรอบหรือ Owner เท่านั้นที่ปิดมิเตอร์ได้", code: "METER_FORBIDDEN" }, { status: 403 });
     }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { openMeterPeriods, visibleMeterHistory } from "@/lib/meter-history";
 
 type FuelType = {
   id: number;
@@ -98,6 +99,7 @@ export default function MeterPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   const [form, setForm] = useState({
     fuelTypeId: "",
@@ -457,7 +459,7 @@ export default function MeterPage() {
                   </div>
 
                   <div className="px-5 pb-5 pt-4">
-                    {g.periods.map((p) => (
+                    {openMeterPeriods(g.periods).map((p) => (
                       <div key={p.id}>
                         <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4">
                           <div>
@@ -532,11 +534,20 @@ export default function MeterPage() {
         <section className="px-5 pt-7 pb-28">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-black">ประวัติล่าสุด</h2>
-            <span className="text-xs text-blue-600">ดูทั้งหมด →</span>
+            {historyGroups.length > 5 && (
+              <button
+                type="button"
+                aria-expanded={showAllHistory}
+                onClick={() => setShowAllHistory((value) => !value)}
+                className="min-h-10 rounded-xl px-2 text-xs font-bold text-blue-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                {showAllHistory ? "ย่อรายการ ↑" : "ดูทั้งหมด →"}
+              </button>
+            )}
           </div>
 
           <div className="space-y-4">
-            {historyGroups.slice(0, 5).map((g) => {
+            {visibleMeterHistory(historyGroups, showAllHistory).map((g) => {
               const diffLiters = g.saleLiters - g.meterLiters;
               const diffAmount = g.saleAmount - g.meterRevenue;
               const ok = Math.abs(diffLiters) < 2;
