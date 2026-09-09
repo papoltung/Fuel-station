@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { openMeterPeriods, visibleMeterHistory } from "@/lib/meter-history";
+import { meterHistoryGroupKey, openMeterPeriods, visibleMeterHistory } from "@/lib/meter-history";
 
 type FuelType = {
   id: number;
@@ -258,7 +258,7 @@ export default function MeterPage() {
 
     for (const p of periods) {
       const dateStr = new Date(p.date).toDateString();
-      const key = `${dateStr}__${p.fuelTypeId}__${p.pumpId ?? "legacy"}__${p.shiftId ?? "legacy"}`;
+      const key = meterHistoryGroupKey(p);
 
       if (!map.has(key)) {
         const daySales = allSales.filter(

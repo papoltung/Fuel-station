@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { openMeterPeriods, visibleMeterHistory } from "./meter-history";
+import { meterHistoryGroupKey, openMeterPeriods, visibleMeterHistory } from "./meter-history";
 
 test("shows five recent rows until the user expands the history", () => {
   const rows = [1, 2, 3, 4, 5, 6, 7];
@@ -14,4 +14,16 @@ test("offers close controls only for meter periods that are still open", () => {
     { id: 2, meterEnd: null },
   ];
   assert.deepEqual(openMeterPeriods(rows), [{ id: 2, meterEnd: null }]);
+});
+
+test("keeps shiftless meter rounds separate so closed rounds enter history", () => {
+  const base = { date: "2026-09-09T01:00:00.000Z", fuelTypeId: 1, pumpId: 2 };
+  assert.notEqual(
+    meterHistoryGroupKey({ ...base, id: 10, shiftId: null }),
+    meterHistoryGroupKey({ ...base, id: 11, shiftId: null }),
+  );
+  assert.equal(
+    meterHistoryGroupKey({ ...base, id: 10, shiftId: 7 }),
+    meterHistoryGroupKey({ ...base, id: 11, shiftId: 7 }),
+  );
 });
