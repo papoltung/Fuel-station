@@ -338,9 +338,7 @@ export default function StockPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 {stocks.map((s) => {
-                  const cmp = compares.find((c) => c.fuelTypeId === s.fuelTypeId);
-                  const meterL = cmp ? Math.max(0, cmp.stockByMeter) : null;
-                  const capacity = Math.max(s.currentLiters, meterL ?? 0, 3000);
+                  const capacity = Math.max(s.currentLiters, 3000);
                   const pct = Math.max(0, Math.min(100, (s.currentLiters / capacity) * 100));
                   const isLow = s.currentLiters < LOW_THRESHOLD;
 
@@ -369,11 +367,6 @@ export default function StockPage() {
                         />
                       </div>
 
-                      {meterL !== null && (
-                        <p className="mt-2 text-[10px] text-slate-400">
-                          มิเตอร์ประมาณ {fmt(meterL)} L
-                        </p>
-                      )}
                     </div>
                   );
                 })}
