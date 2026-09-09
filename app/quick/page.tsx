@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserSaleQueue, createSaleQueueSynchronizer, repairPumpAssignments, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
+import { browserSaleQueue, createSaleQueueSynchronizer, removeQuickSalePumpAssignments, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
 
 type FuelType = {
   id: number;
@@ -21,16 +21,6 @@ type Product = {
   currentStock: number;
   image: string | null;
 };
-
-type Pump = {
-  id: number;
-  number: string;
-  label: string;
-  isActive: boolean;
-  fuelTypeId: number | null;
-};
-
-const PUMP_OPTIONS = ["1", "2", "3", "4"];
 
 const PAYMENT_OPTIONS = [
   { value: "cash", label: "เงินสด", icon: "฿" },
@@ -66,7 +56,6 @@ export default function NewSalePage() {
   const [saleType, setSaleType] = useState<"fuel" | "product">("fuel");
   const [fuelTypes, setFuelTypes] = useState<FuelType[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [pumps, setPumps] = useState<Pump[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -98,7 +87,6 @@ export default function NewSalePage() {
     date: nowDT(),
     sellerName: "",
     fuelTypeId: "",
-    pumpNo: "",
     totalAmount: "",
     pricePerLiter: "",
     paymentMethod: "cash",
@@ -137,11 +125,6 @@ export default function NewSalePage() {
         }
       })
       .catch(() => setError("โหลดข้อมูลสินค้าไม่สำเร็จ"));
-
-    fetch("/api/pumps", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : [])
-      .then((data: Pump[]) => setPumps(Array.isArray(data) ? data : []))
-      .catch(() => setPumps([]));
 
     fetch("/api/me").then((response) => response.ok ? response.json() : null).then(setAccount);
   }, []);
@@ -200,56 +183,17 @@ export default function NewSalePage() {
     () => fuelTypes.find((ft) => String(ft.id) === fuelForm.fuelTypeId),
     [fuelTypes, fuelForm.fuelTypeId]
   );
-  const compatiblePumps = useMemo(
-    () => pumps.filter((pump) => pump.isActive && pump.fuelTypeId === Number(fuelForm.fuelTypeId)),
-    [pumps, fuelForm.fuelTypeId]
-  );
-  const selectedPump = useMemo(
-    () => compatiblePumps.find((pump) => pump.number === fuelForm.pumpNo),
-    [compatiblePumps, fuelForm.pumpNo]
-  );
-
   function chooseFuel(ft: FuelType) {
     const available = Number(ft.currentPrice) > 0;
     if (!available) return;
-
-    const matchingPumps = pumps.filter(
-      (pump) => pump.isActive && pump.fuelTypeId === ft.id
-    );
-
-    const autoPump = matchingPumps[0];
 
     setFuelForm((form) => ({
       ...form,
       fuelTypeId: String(ft.id),
       pricePerLiter: String(ft.currentPrice),
-      pumpNo: autoPump?.number ?? "",
     }));
-
-    if (!autoPump) {
-      setError(`ไม่มีหัวจ่ายที่ตั้งค่าไว้สำหรับ ${ft.label}`);
-    } else {
-      setError("");
-    }
+    setError("");
   }
-
-  useEffect(() => {
-    if (!fuelForm.fuelTypeId) return;
-
-    const matchingPumps = pumps.filter(
-      (pump) =>
-        pump.isActive &&
-        pump.fuelTypeId === Number(fuelForm.fuelTypeId)
-    );
-
-    const autoPump = matchingPumps[0];
-
-    setFuelForm((form) => {
-      const nextPumpNo = autoPump?.number ?? "";
-      if (form.pumpNo === nextPumpNo) return form;
-      return { ...form, pumpNo: nextPumpNo };
-    });
-  }, [pumps, fuelForm.fuelTypeId]);
 
   const fuelPrice = Number(fuelForm.pricePerLiter || 0);
   const fuelAmount = Number(fuelForm.totalAmount || 0);
@@ -294,7 +238,6 @@ export default function NewSalePage() {
     fuelAmount > 0 &&
     fuelPrice > 0 &&
     !!fuelForm.paymentMethod &&
-    !!selectedPump &&
     (fuelForm.paymentMethod !== "credit" ||
       !!fuelForm.customerName.trim()) &&
     !!account;
@@ -321,21 +264,6 @@ export default function NewSalePage() {
       return setError("กรอกยอดเงิน");
     if (!fuelForm.pricePerLiter || fuelPrice <= 0)
       return setError("ยังไม่ได้ตั้งราคาน้ำมันชนิดนี้");
-    if (!selectedPump) {
-      setError(
-        compatiblePumps.length === 0
-          ? "ไม่มีหัวจ่ายที่ตรงกับชนิดน้ำมันนี้"
-          : "กรุณาเลือกหัวจ่าย"
-      );
-      return;
-    }
-
-    const pumpForSale: Pump = selectedPump;
-
-    if (pumpForSale.fuelTypeId !== Number(fuelForm.fuelTypeId)) {
-      setError("ชนิดน้ำมันไม่ตรงกับหัวจ่าย กรุณาเลือกใหม่");
-      return;
-    }
     if (
       fuelForm.paymentMethod === "credit" &&
       !fuelForm.customerName.trim()
@@ -356,15 +284,12 @@ export default function NewSalePage() {
         createdAt: new Date().toISOString(),
         status: "queued",
         attempts: 0,
+        source: "quick",
         createdByAuthUserId: account.authUserId,
-        expectedPumpId: pumpForSale.id,
         payload: {
           clientRequestId: id,
-          expectedPumpId: pumpForSale.id,
-          pumpId: pumpForSale.id,
           ...fuelForm,
           totalAmount: amountForSubmit,
-          pumpNo: `หัวจ่าย ${pumpForSale.number}`,
           date: fuelForm.date + "+07:00",
         },
       });
@@ -394,9 +319,7 @@ export default function NewSalePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientRequestId: crypto.randomUUID(),
-          pumpId: pumpForSale.id,
           ...fuelForm,
-          pumpNo: `หัวจ่าย ${pumpForSale.number}`,
           date: fuelForm.date + "+07:00",
         }),
       });
@@ -581,7 +504,7 @@ export default function NewSalePage() {
                 {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">{queueStatus.lastError || `มี ${queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล`}</p>}
               </div>
               {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void repairPumpAssignments(browserSaleQueue, pumps).then(() => retryNeedsReview(browserSaleQueue)).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
+                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void removeQuickSalePumpAssignments(browserSaleQueue).then(() => retryNeedsReview(browserSaleQueue)).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
               )}
             </div>
           </div>
@@ -672,17 +595,6 @@ export default function NewSalePage() {
               })}
             </div>
 
-            {fuelForm.fuelTypeId && selectedPump && (
-              <p className="mt-2 text-xs font-semibold text-slate-400">
-                ระบบเลือกหัวจ่าย {selectedPump.number} อัตโนมัติ
-              </p>
-            )}
-
-            {fuelForm.fuelTypeId && compatiblePumps.length === 0 && (
-              <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                ไม่มีหัวจ่ายที่ตรงกับ {selectedFuel?.label ?? "น้ำมันชนิดนี้"} — ไม่สามารถบันทึกการขายได้
-              </div>
-            )}
           </section>
 
           <section>

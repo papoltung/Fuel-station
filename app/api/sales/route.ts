@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isSameSaleRequest, parseSaleInput } from "@/lib/sale-input";
+import { isSameSaleRequest, parseOptionalPositiveInteger, parseSaleInput } from "@/lib/sale-input";
 import { requireRole } from "@/lib/authz";
 import { saleSnapshot } from "@/lib/sale-audit";
 import { METER_ERROR_CODES, validatePumpFuel } from "@/lib/meter-context";
@@ -31,10 +31,7 @@ export async function POST(req: NextRequest) {
       const parsedExpectedPumpId = Number(rawExpectedPumpId);
       expectedPumpId = Number.isInteger(parsedExpectedPumpId) && parsedExpectedPumpId > 0 ? parsedExpectedPumpId : -1;
     }
-    const parsedPumpId = body.pumpId === undefined
-      ? Number(String(body.pumpNo ?? "").match(/(\d+)\s*$/)?.[1] ?? NaN)
-      : Number(body.pumpId);
-    pumpId = Number.isInteger(parsedPumpId) && parsedPumpId > 0 ? parsedPumpId : undefined;
+    pumpId = parseOptionalPositiveInteger(body.pumpId);
     input = parseSaleInput({ ...body, sellerName: auth.user.name });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
@@ -43,10 +40,7 @@ export async function POST(req: NextRequest) {
   if (expectedPumpId === -1) {
     return NextResponse.json({ error: "หัวจ่ายอ้างอิงไม่ถูกต้อง", code: "EXPECTED_PUMP_INVALID" }, { status: 400 });
   }
-  if (!pumpId) {
-    return NextResponse.json({ error: "กรุณาเลือกหัวจ่ายที่ตั้งค่าไว้", code: METER_ERROR_CODES.PUMP_NOT_FOUND }, { status: 400 });
-  }
-  if (expectedPumpId !== undefined && expectedPumpId !== pumpId) {
+  if (expectedPumpId !== undefined && (!pumpId || expectedPumpId !== pumpId)) {
     return NextResponse.json({ error: "รายการออฟไลน์อ้างอิงหัวจ่ายคนละหัว", code: METER_ERROR_CODES.EXPECTED_PUMP_MISMATCH }, { status: 409 });
   }
 
@@ -62,17 +56,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const sale = await prisma.$transaction(async (tx) => {
-      const pump = await tx.pump.findUnique({ where: { id: pumpId } });
-      if (!pump || !pump.isActive) throw new Error(METER_ERROR_CODES.PUMP_NOT_FOUND);
-      const fuelMatch = validatePumpFuel({ configuredFuelTypeId: pump.fuelTypeId, requestedFuelTypeId: input.fuelTypeId });
-      if (!fuelMatch.ok) throw new Error(fuelMatch.code);
+      const pump = pumpId ? await tx.pump.findUnique({ where: { id: pumpId } }) : null;
+      if (pumpId && (!pump || !pump.isActive)) throw new Error(METER_ERROR_CODES.PUMP_NOT_FOUND);
+      if (pump) {
+        const fuelMatch = validatePumpFuel({ configuredFuelTypeId: pump.fuelTypeId, requestedFuelTypeId: input.fuelTypeId });
+        if (!fuelMatch.ok) throw new Error(fuelMatch.code);
+      }
       const created = await tx.sale.create({
         data: {
           clientRequestId: input.clientRequestId,
           date: input.date ? new Date(input.date) : new Date(),
           sellerName: input.sellerName,
           fuelTypeId: input.fuelTypeId,
-          pumpNo: input.pumpNo,
+          pumpNo: input.pumpNo ?? "",
           meterStart: input.meterStart,
           meterEnd: input.meterEnd,
           liters: input.liters,
@@ -82,7 +78,7 @@ export async function POST(req: NextRequest) {
           customerName: input.customerName,
           note: input.note,
           shiftId: null,
-          pumpId: pump.id,
+          pumpId: pump?.id ?? null,
         },
         include: { fuelType: true, pump: true, shift: { select: { id: true, status: true, openedById: true } } },
       });

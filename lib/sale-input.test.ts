@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isSameSaleRequest, parseSaleInput } from "./sale-input";
+import { isSameSaleRequest, parseOptionalPositiveInteger, parseSaleInput } from "./sale-input";
+
+test("distinguishes an absent pump from an invalid supplied pump", () => {
+  assert.equal(parseOptionalPositiveInteger(undefined), undefined);
+  assert.equal(parseOptionalPositiveInteger(null), undefined);
+  assert.equal(parseOptionalPositiveInteger(2), 2);
+  assert.throws(() => parseOptionalPositiveInteger(0));
+  assert.throws(() => parseOptionalPositiveInteger("bad"));
+});
 
 test("parses an amount sale and keeps its request id", () => {
   assert.deepEqual(
@@ -30,6 +38,25 @@ test("parses an amount sale and keeps its request id", () => {
       meterEnd: null,
     },
   );
+});
+
+test("parses a quick fuel sale without a pump", () => {
+  const parsed = parseSaleInput({
+    clientRequestId: "quick-1",
+    sellerName: "Papol",
+    fuelTypeId: 2,
+    pricePerLiter: 39,
+    totalAmount: 50,
+    paymentMethod: "cash",
+  });
+  assert.equal(parsed.pumpNo, null);
+  assert.equal(parsed.totalAmount, 50);
+  assert.equal(isSameSaleRequest({
+    ...parsed,
+    pumpNo: "",
+    date: new Date("2026-09-09T10:00:00.000Z"),
+    pumpId: null,
+  }, parsed), true);
 });
 
 test("rejects invalid numeric and payment values", () => {

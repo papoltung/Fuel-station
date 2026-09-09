@@ -53,22 +53,21 @@ export async function GET() {
         (m) => m.fuelTypeId === ft.id && m.liters !== null && m.meterEnd !== null && isAfter(new Date(m.date))
       );
 
-      // วันที่มี closed MeterPeriod
-      const meterDays = new Set(closedMeterPeriods.map((m) => toDateKey(new Date(m.date))));
+      const meterKeys = new Set(closedMeterPeriods.map((m) => `${toDateKey(new Date(m.date))}:${m.pumpId ?? "legacy"}`));
 
       // ลิตรจากมิเตอร์จริง (วันที่ปิดรอบ)
       const litersByMeter = closedMeterPeriods.reduce((a, m) => a + (m.liters ?? 0), 0);
 
       // ลิตรจาก Sales วันที่ไม่มีมิเตอร์ปิด (estimate)
       const salesEstimate = salesAfter
-        .filter((s) => !meterDays.has(toDateKey(new Date(s.date))))
+        .filter((s) => s.pumpId === null || !meterKeys.has(`${toDateKey(new Date(s.date))}:${s.pumpId}`))
         .reduce((a, s) => a + s.liters, 0);
 
       const soldByMeterEstimated = litersByMeter + salesEstimate;
-      const meterDaysCount = meterDays.size;
+      const meterDaysCount = new Set(closedMeterPeriods.map((m) => toDateKey(new Date(m.date)))).size;
       const estimateDaysCount = new Set(
         salesAfter
-          .filter((s) => !meterDays.has(toDateKey(new Date(s.date))))
+          .filter((s) => s.pumpId === null || !meterKeys.has(`${toDateKey(new Date(s.date))}:${s.pumpId}`))
           .map((s) => toDateKey(new Date(s.date)))
       ).size;
 

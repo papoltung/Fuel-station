@@ -26,6 +26,13 @@ function optionalText(value: unknown) {
   return text || null;
 }
 
+export function parseOptionalPositiveInteger(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error("หัวจ่ายไม่ถูกต้อง");
+  return parsed;
+}
+
 export function parseSaleInput(input: SaleInput) {
   const fuelTypeId = finitePositive(input.fuelTypeId, "ชนิดน้ำมัน");
   if (!Number.isInteger(fuelTypeId)) throw new Error("ชนิดน้ำมันไม่ถูกต้อง");
@@ -33,7 +40,7 @@ export function parseSaleInput(input: SaleInput) {
   const pricePerLiter = finitePositive(input.pricePerLiter, "ราคาต่อลิตร");
   const sellerName = optionalText(input.sellerName);
   const pumpNo = optionalText(input.pumpNo);
-  if (!sellerName || !pumpNo) throw new Error("ข้อมูลผู้ขายหรือหัวจ่ายไม่ครบ");
+  if (!sellerName) throw new Error("ข้อมูลผู้ขายไม่ครบ");
 
   if (!PAYMENT_METHODS.includes(input.paymentMethod as (typeof PAYMENT_METHODS)[number])) {
     throw new Error("วิธีชำระเงินไม่ถูกต้อง");
@@ -85,7 +92,7 @@ type StoredSale = {
   clientRequestId: string | null;
   sellerName: string;
   fuelTypeId: number;
-  pumpNo: string;
+  pumpNo: string | null;
   pricePerLiter: number;
   totalAmount: number;
   liters: number;
@@ -102,7 +109,7 @@ export function isSameSaleRequest(existing: StoredSale, input: ReturnType<typeof
   return existing.clientRequestId === input.clientRequestId
     && existing.fuelTypeId === input.fuelTypeId
     && existing.sellerName === input.sellerName
-    && existing.pumpNo === input.pumpNo
+    && (existing.pumpNo || null) === input.pumpNo
     && (existing.pumpId === undefined || existing.pumpId === null || existing.pumpId === pumpId)
     && existing.pricePerLiter === input.pricePerLiter
     && existing.totalAmount === input.totalAmount

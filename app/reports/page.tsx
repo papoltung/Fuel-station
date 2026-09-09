@@ -29,9 +29,10 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
       prisma.meterPeriod.findMany({ where, include: { fuelType: true, pump: true, shift: { select: { id: true, openedByName: true } } } }),
     ]);
     const contextKey = (row: { fuelTypeId: number; pumpId: number | null; shiftId: number | null }) => `${row.fuelTypeId}:${row.pumpId ?? "legacy"}:${row.shiftId ?? "legacy"}`;
-    const contextKeys = [...new Set([...sales.map(contextKey), ...periods.map(contextKey)])];
+    const pumpSales = sales.filter(row => row.pumpId !== null);
+    const contextKeys = [...new Set([...pumpSales.map(contextKey), ...periods.filter(row => row.pumpId !== null).map(contextKey)])];
     comparison = contextKeys.map(key => {
-      const groupedSales = sales.filter(row => contextKey(row) === key);
+      const groupedSales = pumpSales.filter(row => contextKey(row) === key);
       const groupedPeriods = periods.filter(row => contextKey(row) === key);
       const sample = groupedSales[0] ?? groupedPeriods[0];
       const pump = sample?.pump?.label ?? "หัวจ่ายเดิม";

@@ -11,6 +11,7 @@ export type PendingSale = {
   expectedShiftId?: number;
   expectedPumpId?: number;
   lastError?: string;
+  source?: "quick";
 };
 
 export type SaleQueueStore = {
@@ -32,30 +33,19 @@ export async function retryNeedsReview(store: SaleQueueStore) {
   }
 }
 
-export async function repairPumpAssignments(
-  store: SaleQueueStore,
-  pumps: Array<{ id: number; number: string; fuelTypeId: number | null; isActive: boolean }>,
-) {
+export async function removeQuickSalePumpAssignments(store: SaleQueueStore) {
   const items = await store.list();
   for (const item of items) {
-    if (item.status !== "needs-review") continue;
-    const fuelTypeId = Number(item.payload.fuelTypeId);
-    const currentPump = pumps.find((pump) => pump.id === item.expectedPumpId);
-    if (!Number.isInteger(fuelTypeId) || (currentPump?.isActive && currentPump.fuelTypeId === fuelTypeId)) continue;
-    const replacement = pumps.find((pump) => pump.isActive && pump.fuelTypeId === fuelTypeId);
-    if (!replacement) continue;
-    await store.put({
-      ...item,
-      status: "queued",
-      expectedPumpId: replacement.id,
-      lastError: undefined,
-      payload: {
-        ...item.payload,
-        expectedPumpId: replacement.id,
-        pumpId: replacement.id,
-        pumpNo: `หัวจ่าย ${replacement.number}`,
-      },
-    });
+    const isLegacyPumpMismatch = item.status === "needs-review"
+      && item.payload.totalAmount !== undefined
+      && typeof item.payload.pumpId === "number"
+      && item.lastError?.includes("ชนิดน้ำมันไม่ตรงกับหัวจ่าย");
+    if (item.source !== "quick" && !isLegacyPumpMismatch) continue;
+    const { pumpId: _pumpId, expectedPumpId: _expectedPumpId, pumpNo: _pumpNo, ...payload } = item.payload;
+    void _pumpId;
+    void _expectedPumpId;
+    void _pumpNo;
+    await store.put({ ...item, expectedPumpId: undefined, payload });
   }
 }
 
@@ -100,7 +90,7 @@ export async function syncPendingSales(
   const items = (await store.list()).filter((item) => item.status !== "needs-review");
   let synced = 0;
   for (const item of items) {
-    if (currentAuthUserId && (item.createdByAuthUserId !== currentAuthUserId || typeof item.expectedPumpId !== "number" || !Number.isInteger(item.expectedPumpId) || item.expectedPumpId <= 0)) {
+    if (currentAuthUserId && item.createdByAuthUserId !== currentAuthUserId) {
       await store.put({ ...item, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" });
       continue;
     }

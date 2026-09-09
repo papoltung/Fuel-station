@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     prisma.sale.findMany({
       where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
       orderBy: { date: "asc" },
-      select: { fuelTypeId: true, liters: true, date: true },
+      select: { fuelTypeId: true, pumpId: true, liters: true, date: true },
     }),
     prisma.meterPeriod.findMany({
       where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
@@ -53,10 +53,10 @@ export async function GET(req: NextRequest) {
     const closedMeters = meterPeriods.filter(
       (m) => m.fuelTypeId === ftId && m.liters !== null && m.meterEnd !== null && isAfter(new Date(m.date))
     );
-    const meterDays = new Set(closedMeters.map((m) => toDateKey(new Date(m.date))));
+    const meterKeys = new Set(closedMeters.map((m) => `${toDateKey(new Date(m.date))}:${m.pumpId ?? "legacy"}`));
     const litersByMeter = closedMeters.reduce((a, m) => a + (m.liters ?? 0), 0);
     const salesEstimate = allSales
-      .filter((s) => s.fuelTypeId === ftId && isAfter(new Date(s.date)) && !meterDays.has(toDateKey(new Date(s.date))))
+      .filter((s) => s.fuelTypeId === ftId && isAfter(new Date(s.date)) && (s.pumpId === null || !meterKeys.has(`${toDateKey(new Date(s.date))}:${s.pumpId}`)))
       .reduce((a, s) => a + s.liters, 0);
     const remaining = Math.max(0, checkActual + totalPurchasedAfter - (litersByMeter + salesEstimate));
 
