@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { dashboardMetrics } from "@/lib/dashboard-metrics";
 
 type Summary = {
   totalRevenue: number;
@@ -12,6 +13,9 @@ type Summary = {
   count: number;
   productCount: number;
   byPayment: Record<string, number>;
+  fuelByPayment: Record<string, number>;
+  productByPayment: Record<string, number>;
+  byFuel: Record<string, { label: string; liters: number; revenue: number }>;
 };
 type Stock = { fuelTypeId: number; currentLiters: number; fuelType: { name: string; label: string } };
 type Sale = { id: number; date: string; sellerName: string; totalAmount: number; paymentMethod: string; pumpNo: string; fuelType: { name: string; label: string } };
@@ -90,6 +94,7 @@ export default function DashboardPage() {
   }, [date, retry]);
 
   const totalStock = stocks.reduce((sum, item) => sum + Math.max(0, item.currentLiters), 0);
+  const metrics = dashboardMetrics(summary ?? {});
   const recentSales = [
     ...sales.map(sale => ({ ...sale, kind: "fuel" as const })),
     ...productSales.map(sale => ({ ...sale, kind: "product" as const })),
@@ -154,6 +159,38 @@ export default function DashboardPage() {
               { icon: "▤", label: "จำนวนรายการ", value: money((summary?.count ?? 0) + (summary?.productCount ?? 0)), detail: trend((summary?.count ?? 0) + (summary?.productCount ?? 0), summary?.previousCount ?? 0), accent: "bg-indigo-50 text-indigo-600" },
               { icon: "฿", label: "ยอดขายเงินสด", value: `฿ ${money(summary?.byPayment?.cash ?? 0)}`, detail: "เฉพาะรายการชำระเงินสด", accent: "bg-emerald-50 text-emerald-600" },
             ].map((stat) => <article key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start gap-4"><span className={`grid size-12 shrink-0 place-items-center rounded-xl text-xl font-black ${stat.accent}`} aria-hidden="true">{stat.icon}</span><div className="min-w-0"><p className="text-sm font-semibold text-slate-500">{stat.label}</p><p className="mt-1 text-2xl font-black tabular-nums">{stat.value}</p><p className={`mt-2 text-xs font-semibold ${stat.detail.startsWith("↑") ? "text-emerald-600" : stat.detail.startsWith("↓") ? "text-red-500" : "text-slate-400"}`}>{stat.detail}</p></div></div></article>)}
+          </section>
+
+          <section aria-label="รายละเอียดยอดขายวันนี้" className="mt-4 grid gap-4 xl:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-lg font-black">ช่องทางรับเงินวันนี้</h2>
+                <p className="text-xs text-slate-500">แยกยอดน้ำมันและสินค้า · เงินโอนรวม QR</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {[
+                  { label: "น้ำมัน", cash: metrics.fuelCash, transfer: metrics.fuelTransfer, color: "bg-blue-500" },
+                  { label: "สินค้า", cash: metrics.productCash, transfer: metrics.productTransfer, color: "bg-violet-500" },
+                ].map((row) => (
+                  <div key={row.label} className="grid grid-cols-[minmax(5rem,1fr)_1fr_1fr] items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="flex min-w-0 items-center gap-2 font-bold"><span className={`size-2.5 shrink-0 rounded-full ${row.color}`} />{row.label}</div>
+                    <div className="text-right"><p className="text-[11px] text-slate-400">เงินสด</p><p className="font-black tabular-nums">฿ {money(row.cash)}</p></div>
+                    <div className="text-right"><p className="text-[11px] text-slate-400">โอน / QR</p><p className="font-black tabular-nums">฿ {money(row.transfer)}</p></div>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="text-lg font-black">น้ำมันที่ขายวันนี้</h2>
+                <p className="text-xs text-slate-500">ปริมาณตามรายการขายของวันที่เลือก</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-blue-50 p-4"><p className="text-xs font-bold text-blue-700">เบนซิน 95</p><p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{number(metrics.benzin95Liters)} <span className="text-sm text-slate-500">L</span></p></div>
+                <div className="rounded-xl bg-slate-100 p-4"><p className="text-xs font-bold text-slate-700">ดีเซล</p><p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{number(metrics.dieselLiters)} <span className="text-sm text-slate-500">L</span></p></div>
+              </div>
+            </article>
           </section>
 
           {roleCode === "owner" && <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_.8fr]">
