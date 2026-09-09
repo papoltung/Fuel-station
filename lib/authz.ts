@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { shouldRefreshLastSeen } from "@/lib/user-activity";
 
 export const ROLES = ["owner", "manager", "staff"] as const;
 export type Role = typeof ROLES[number];
@@ -27,6 +28,7 @@ export async function currentAppUser(): Promise<AuthResult> {
   try {
     const existing = await prisma.appUser.findUnique({ where: { authUserId: user.id } });
     if (existing) {
+      if (!shouldRefreshLastSeen(existing.lastSeenAt)) return { ok: true, user: existing };
       const metadata = user.user_metadata ?? {};
       const email = user.email?.trim().toLowerCase();
       if (!email) throw new Error("EMAIL_REQUIRED");

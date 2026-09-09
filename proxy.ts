@@ -32,14 +32,17 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  const { data: { user } } = await supabase.auth.getUser();
+  // Verify the signed JWT locally when possible; API handlers still perform
+  // their own authoritative user check before reading or mutating data.
+  const { data: claimData } = await supabase.auth.getClaims();
+  const authUserId = typeof claimData?.claims.sub === "string" ? claimData.claims.sub : null;
   const isLogin = request.nextUrl.pathname === "/login";
-  if (!user && isApi) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
-  if (!user && !isLogin) return NextResponse.redirect(loginUrl);
-  if (user && isLogin) return NextResponse.redirect(new URL("/dashboard", request.url));
-  if (user && isOwnerStockPath(request.nextUrl.pathname)) {
+  if (!authUserId && isApi) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+  if (!authUserId && !isLogin) return NextResponse.redirect(loginUrl);
+  if (authUserId && isLogin) return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (authUserId && isOwnerStockPath(request.nextUrl.pathname)) {
     try {
-      const account = await prisma.appUser.findUnique({ where: { authUserId: user.id }, select: { role: true } });
+      const account = await prisma.appUser.findUnique({ where: { authUserId }, select: { role: true } });
       if (account?.role !== "owner") {
         return isApi
           ? NextResponse.json({ error: "สต็อกเข้าถึงได้เฉพาะ Owner" }, { status: 403, headers: { "Cache-Control": "private, no-store" } })

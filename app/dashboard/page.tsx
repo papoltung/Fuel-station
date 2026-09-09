@@ -63,43 +63,31 @@ export default function DashboardPage() {
   const [roleCode, setRoleCode] = useState("");
 
   useEffect(() => {
-    fetch("/api/me").then((response) => response.ok ? response.json() : null).then((user) => {
-      if (!user) return;
-      setRoleCode(user.role ?? "");
-      const role = user.role === "owner" ? "เจ้าของ" : user.role === "manager" ? "ผู้จัดการ" : "พนักงาน";
-      setAccount({
-        name: user.name || user.email?.split("@")[0] || "บัญชีผู้ใช้",
-        email: user.email ?? "",
-        avatarUrl: user.avatarUrl || "",
-        role,
-      });
-    });
-  }, []);
-
-  useEffect(() => {
     const controller = new AbortController();
-    const read = async (url: string) => {
-      const response = await fetch(url, { signal: controller.signal });
+    const loadDashboard = async () => {
+      const response = await fetch(`/api/dashboard?date=${date}`, { signal: controller.signal });
       if (!response.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
       return response.json();
     };
-    Promise.all([
-      read(`/api/sales/summary?date=${date}`),
-      roleCode === "owner" ? read("/api/fuel-stock") : Promise.resolve([]),
-      read(`/api/sales?date=${date}`),
-      read(`/api/meter-periods?date=${date}`),
-      read(`/api/product-sales?date=${date}`),
-    ]).then(([summaryData, stockData, saleData, meterData, productSaleData]) => {
-      setSummary(summaryData);
-      setStocks(Array.isArray(stockData) ? stockData : []);
-      setSales(Array.isArray(saleData) ? saleData : []);
-      setMeters(Array.isArray(meterData) ? meterData : []);
-      setProductSales(Array.isArray(productSaleData) ? productSaleData : []);
+    loadDashboard().then((data) => {
+      const user = data.account;
+      setRoleCode(user?.role ?? "");
+      setAccount({
+        name: user?.name || user?.email?.split("@")[0] || "บัญชีผู้ใช้",
+        email: user?.email ?? "",
+        avatarUrl: user?.avatarUrl || "",
+        role: user?.role === "owner" ? "เจ้าของ" : user?.role === "manager" ? "ผู้จัดการ" : "พนักงาน",
+      });
+      setSummary(data.summary);
+      setStocks(Array.isArray(data.stocks) ? data.stocks : []);
+      setSales(Array.isArray(data.sales) ? data.sales : []);
+      setMeters(Array.isArray(data.meters) ? data.meters : []);
+      setProductSales(Array.isArray(data.productSales) ? data.productSales : []);
       setError("");
     }).catch(() => { if (!controller.signal.aborted) setError("โหลดข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [date, retry, roleCode]);
+  }, [date, retry]);
 
   const totalStock = stocks.reduce((sum, item) => sum + Math.max(0, item.currentLiters), 0);
   const recentSales = [
