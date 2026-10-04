@@ -2,7 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { browserSaleQueue, createSaleQueueSynchronizer, removeQuickSalePumpAssignments, retryNeedsReview, type PendingSale } from "@/lib/sale-queue";
+import {
+  browserSaleQueue,
+  canUserDiscardPendingSale,
+  categorizeQueueError,
+  createSaleQueueSynchronizer,
+  discardQueueItem,
+  getDiscardWarning,
+  getQueueCounts,
+  parseQueueItemDisplay,
+  removeQuickSalePumpAssignments,
+  retryNeedsReview,
+  type PendingSale,
+} from "@/lib/sale-queue";
 
 type FuelType = {
   id: number;
@@ -62,6 +74,11 @@ export default function NewSalePage() {
   const [successData, setSuccessData] = useState({ amount: 0, label: "" });
   const [account, setAccount] = useState<Account | null>(null);
   const [queueStatus, setQueueStatus] = useState<{ queued: number; needsReview: number; lastError?: string }>({ queued: 0, needsReview: 0 });
+  const [queueItems, setQueueItems] = useState<PendingSale[]>([]);
+  const [showQueueDetails, setShowQueueDetails] = useState(false);
+  const [itemToDiscard, setItemToDiscard] = useState<PendingSale | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [queuedFlash, setQueuedFlash] = useState("");
   const [showKeypad, setShowKeypad] = useState(false);
@@ -69,6 +86,60 @@ export default function NewSalePage() {
   const customSubmitAmount = useRef<string | null>(null);
   const fuelFormRef = useRef<HTMLFormElement>(null);
   const backgroundSyncTimer = useRef<number | null>(null);
+
+  const reloadQueueSnapshot = async () => {
+    try {
+      const items = await browserSaleQueue.list();
+      setQueueItems(items);
+      const counts = getQueueCounts(items);
+      const lastError = items.find((i) => i.status === "needs-review")?.lastError;
+      setQueueStatus({ queued: counts.queued, needsReview: counts.needsReview, lastError });
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSyncAll = async () => {
+    if (syncing) return;
+    if (backgroundSyncTimer.current !== null) {
+      window.clearTimeout(backgroundSyncTimer.current);
+      backgroundSyncTimer.current = null;
+    }
+    setSyncing(true);
+    try {
+      await removeQuickSalePumpAssignments(browserSaleQueue);
+      await retryNeedsReview(browserSaleQueue);
+      const result = await syncSaleQueue();
+      await reloadQueueSnapshot();
+      setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleRetrySingle = async (id: string) => {
+    if (syncing || retryingId) return;
+    setRetryingId(id);
+    try {
+      await retryNeedsReview(browserSaleQueue, id);
+      await syncSaleQueue();
+      await reloadQueueSnapshot();
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const handleConfirmDiscard = async () => {
+    if (!itemToDiscard || discarding) return;
+    setDiscarding(true);
+    try {
+      await discardQueueItem(browserSaleQueue, itemToDiscard.id);
+      await reloadQueueSnapshot();
+      setItemToDiscard(null);
+    } finally {
+      setDiscarding(false);
+    }
+  };
 
   // product-shop UX
   const [productSearch, setProductSearch] = useState("");
@@ -136,7 +207,11 @@ export default function NewSalePage() {
       setSyncing(true);
       try {
         const result = await syncSaleQueue();
-        if (mounted) setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError });
+        if (mounted) {
+          const items = await browserSaleQueue.list();
+          setQueueItems(items);
+          setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError });
+        }
       } finally {
         if (mounted) setSyncing(false);
       }
@@ -294,17 +369,21 @@ export default function NewSalePage() {
           date: fuelForm.date + "+07:00",
         },
       });
+      await reloadQueueSnapshot();
       setQueuedFlash(`${selectedFuel?.label ?? "น้ำมัน"} ฿${effectiveFuelAmount.toLocaleString("th-TH")} — บันทึกแล้ว`);
-      setQueueStatus((value) => ({ ...value, queued: value.queued + 1 }));
       setFuelForm((form) => ({ ...form, date: nowDT(), totalAmount: "", customerName: "" }));
       window.setTimeout(() => setQueuedFlash(""), 3500);
       if (backgroundSyncTimer.current !== null) window.clearTimeout(backgroundSyncTimer.current);
-      backgroundSyncTimer.current = window.setTimeout(() => {
+      backgroundSyncTimer.current = window.setTimeout(async () => {
         backgroundSyncTimer.current = null;
         setSyncing(true);
-        void syncSaleQueue()
-          .then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError }))
-          .finally(() => setSyncing(false));
+        try {
+          const result = await syncSaleQueue();
+          await reloadQueueSnapshot();
+          setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError });
+        } finally {
+          setSyncing(false);
+        }
       }, 5000);
       return;
     } catch {
@@ -508,19 +587,293 @@ export default function NewSalePage() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 pt-4">
-        {(queuedFlash || queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-          <div className={`mb-3 rounded-2xl border px-4 py-3 text-sm ${queueStatus.needsReview > 0 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status">
+        {(queuedFlash || queueItems.length > 0 || queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
+          <div
+            className={`mb-3 rounded-2xl border px-4 py-3 text-sm shadow-xs transition ${
+              queueStatus.needsReview > 0
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-blue-200 bg-blue-50 text-blue-950"
+            }`}
+            role="status"
+          >
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="font-bold">{queuedFlash || (syncing ? "กำลังส่งคิวขาย…" : queueStatus.queued > 0 ? `รอส่ง ${queueStatus.queued} รายการ` : `มี ${queueStatus.needsReview} รายการต้องตรวจสอบ`)}</p>
-                {queueStatus.needsReview > 0 && <p className="mt-1 text-xs">{queueStatus.lastError || `มี ${queueStatus.needsReview} รายการต้องตรวจสอบข้อมูล`}</p>}
+              <div className="min-w-0 flex-1">
+                {queuedFlash ? (
+                  <p className="font-bold text-emerald-800">{queuedFlash}</p>
+                ) : (
+                  <div>
+                    <div className="flex flex-wrap items-center gap-1.5 font-bold">
+                      {syncing && (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-0.5 text-xs text-white">
+                          <span className="inline-block size-2 animate-pulse rounded-full bg-white" /> กำลังส่ง…
+                        </span>
+                      )}
+                      {queueStatus.queued > 0 && (
+                        <span className="inline-flex items-center rounded-lg bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                          รอส่ง {queueStatus.queued} รายการ
+                        </span>
+                      )}
+                      {queueStatus.needsReview > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-amber-200 px-2 py-0.5 text-xs font-bold text-amber-950">
+                          ⚠️ ต้องตรวจสอบ {queueStatus.needsReview} รายการ
+                        </span>
+                      )}
+                      {queueItems.length === 0 && !syncing && queueStatus.queued === 0 && queueStatus.needsReview === 0 && (
+                        <span>คิวว่าง</span>
+                      )}
+                    </div>
+                    {queueStatus.needsReview > 0 && (
+                      <p className="mt-1 line-clamp-1 text-xs text-amber-800">
+                        {categorizeQueueError(queueStatus.lastError).userMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-              {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
-                <button type="button" disabled={syncing} onClick={() => { if (backgroundSyncTimer.current !== null) { window.clearTimeout(backgroundSyncTimer.current); backgroundSyncTimer.current = null; } setSyncing(true); void removeQuickSalePumpAssignments(browserSaleQueue).then(() => retryNeedsReview(browserSaleQueue)).then(() => syncSaleQueue()).then((result) => setQueueStatus({ queued: result.queued, needsReview: result.needsReview, lastError: result.lastError })).finally(() => setSyncing(false)); }} className="min-h-10 shrink-0 rounded-xl bg-white px-3 font-bold shadow-sm disabled:opacity-50">ส่งอีกครั้ง</button>
-              )}
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {queueItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowQueueDetails(true)}
+                    className="min-h-9 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50"
+                  >
+                    ดูรายการ ({queueItems.length})
+                  </button>
+                )}
+                {(queueStatus.queued > 0 || queueStatus.needsReview > 0) && (
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={handleSyncAll}
+                    className="min-h-9 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {syncing ? "กำลังส่ง…" : "ส่งอีกครั้ง"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
+
+        {/* Queue Details Modal */}
+        {showQueueDetails && (
+          <div
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4 backdrop-blur-xs"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-[28px] sm:rounded-[28px] bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <h2 className="text-base font-black text-slate-900">
+                    รายการขายค้างส่งในเครื่อง ({queueItems.length})
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    เก็บไว้ในเครื่องอย่างปลอดภัย จะถูกส่งเมื่อเชื่อมต่อได้
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQueueDetails(false)}
+                  className="grid size-9 place-items-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 text-sm font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-5 py-2.5">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="rounded-md bg-blue-100 px-2 py-0.5 font-bold text-blue-800">
+                    รอส่ง {queueStatus.queued}
+                  </span>
+                  {queueStatus.needsReview > 0 && (
+                    <span className="rounded-md bg-amber-100 px-2 py-0.5 font-bold text-amber-900">
+                      ต้องตรวจ {queueStatus.needsReview}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={syncing || queueItems.length === 0}
+                  onClick={handleSyncAll}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {syncing ? "กำลังส่งทั้งหมด…" : "ส่งทั้งหมดอีกครั้ง"}
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {queueItems.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-400">ไม่มีรายการค้างส่งในเครื่อง</p>
+                ) : (
+                  queueItems.map((item) => {
+                    const display = parseQueueItemDisplay(item, fuelTypes);
+                    const isRetrying = retryingId === item.id || syncing;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-2xl border p-4 transition ${
+                          item.status === "needs-review"
+                            ? "border-amber-200 bg-amber-50/50"
+                            : item.status === "sending"
+                            ? "border-blue-200 bg-blue-50/40"
+                            : "border-slate-200 bg-white"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-900">{display.fuelTypeName}</span>
+                              <span
+                                className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold ${
+                                  item.status === "needs-review"
+                                    ? "bg-amber-200 text-amber-900"
+                                    : item.status === "sending"
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {display.statusLabel}
+                              </span>
+                              {display.isStale && (
+                                <span className="rounded-md bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-700">
+                                  ค้างส่งนาน
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+                              <span>{display.paymentMethod}</span>
+                              <span>•</span>
+                              <span>{display.formattedTime || item.createdAt.slice(11, 16)}</span>
+                              {display.liters && (
+                                <>
+                                  <span>•</span>
+                                  <span>≈ {display.liters} L</span>
+                                </>
+                              )}
+                              {display.customerName && (
+                                <>
+                                  <span>•</span>
+                                  <span className="font-medium text-slate-700">ลูกค้า: {display.customerName}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="text-lg font-black text-slate-900 tabular-nums">
+                              ฿{display.totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-mono">#{display.shortId}</p>
+                          </div>
+                        </div>
+
+                        {display.friendlyError && (
+                          <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-100/60 px-3 py-2 text-xs text-amber-900">
+                            <p className="font-semibold">{display.friendlyError}</p>
+                            {display.attempts > 0 && (
+                              <p className="mt-0.5 text-[11px] text-amber-700">
+                                ลองส่งไปแล้ว {display.attempts} ครั้ง
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                          {canUserDiscardPendingSale(account?.role) && (
+                            <button
+                              type="button"
+                              onClick={() => setItemToDiscard(item)}
+                              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                            >
+                              ลบรายการค้าง
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={isRetrying}
+                            onClick={() => handleRetrySingle(item.id)}
+                            className="rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-xs hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {isRetrying ? "กำลังส่ง…" : "ส่งรายการนี้"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Discard Confirmation Modal */}
+        {itemToDiscard && (() => {
+          const warning = getDiscardWarning(itemToDiscard);
+          const display = parseQueueItemDisplay(itemToDiscard, fuelTypes);
+
+          return (
+            <div
+              className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
+                <div className="flex items-center gap-3">
+                  <span className={`grid size-10 place-items-center rounded-full text-lg font-bold ${
+                    warning.isConflict ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800"
+                  }`}>
+                    ⚠️
+                  </span>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base">{warning.warningTitle}</h3>
+                    <p className="text-xs text-slate-500">รหัสรายการ #{display.shortId}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                  <div className="flex justify-between font-bold text-slate-800">
+                    <span>{display.fuelTypeName}</span>
+                    <span className="tabular-nums">฿{display.totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between text-slate-500">
+                    <span>วิธีชำระ: {display.paymentMethod}</span>
+                    <span>บันทึกเมื่อ: {display.formattedTime || itemToDiscard.createdAt.slice(11, 16)}</span>
+                  </div>
+                </div>
+
+                <div className={`mt-3 rounded-xl border p-3 text-xs leading-relaxed ${
+                  warning.isConflict
+                    ? "border-rose-200 bg-rose-50 text-rose-900"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}>
+                  {warning.warningMessage}
+                </div>
+
+                <div className="mt-5 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={discarding}
+                    onClick={() => setItemToDiscard(null)}
+                    className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    disabled={discarding}
+                    onClick={handleConfirmDiscard}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    {discarding ? "กำลังนำออก…" : "ยืนยันนำรายการออก"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
         {account && <div className="mb-3 flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3"><span className="grid size-9 place-items-center rounded-full bg-blue-600 font-black text-white">{account.name.slice(0, 1).toUpperCase()}</span><div><p className="text-xs text-blue-600">ขายโดย</p><p className="font-bold text-slate-900">{account.name}<span className="ml-1 text-xs font-semibold text-slate-500">· {account.role === "owner" ? "เจ้าของ" : account.role === "manager" ? "ผู้จัดการ" : "พนักงาน"}</span></p></div></div>}
         <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-200/70 p-1">
           <button

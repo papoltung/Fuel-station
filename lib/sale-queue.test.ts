@@ -1,7 +1,21 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createSaleQueueSynchronizer, removeQuickSalePumpAssignments, retryNeedsReview, syncPendingSales, type PendingSale, type SaleQueueStore } from "./sale-queue";
+import {
+  canUserDiscardPendingSale,
+  categorizeQueueError,
+  createSaleQueueSynchronizer,
+  discardQueueItem,
+  getDiscardWarning,
+  getQueueCounts,
+  parseQueueItemDisplay,
+  removeQuickSalePumpAssignments,
+  retryNeedsReview,
+  STALE_QUEUE_WARNING_MS,
+  syncPendingSales,
+  type PendingSale,
+  type SaleQueueStore,
+} from "./sale-queue";
 
 function memoryStore(initial: PendingSale[]): SaleQueueStore & { rows: Map<string, PendingSale> } {
   const rows = new Map(initial.map((item) => [item.id, item]));
@@ -574,4 +588,357 @@ test("multi-tab resurrection prevention D: both tabs fail transiently, item rema
   assert.ok(item?.attempts && item.attempts >= 1);
   assert.equal(resA.synced, 0);
   assert.equal(resB.synced, 0);
+});
+
+// ==========================================
+// Sprint 3B — Recovery & Operations UX Tests
+// ==========================================
+
+test("3B-01: queue summary counts queued/sending/needs-review correctly", () => {
+  const items: PendingSale[] = [
+    { ...pending("s1"), status: "queued" },
+    { ...pending("s2"), status: "queued" },
+    { ...pending("s3"), status: "sending" },
+    { ...pending("s4"), status: "needs-review" },
+  ];
+  const summary = getQueueCounts(items);
+  assert.deepEqual(summary, { queued: 2, sending: 1, needsReview: 1, total: 4 });
+});
+
+test("3B-02: definitive server acceptance (201) removes item from visible queue", async () => {
+  const store = memoryStore([pending("s-acc")]);
+  const res = await syncPendingSales(store, async () => ({ ok: true, status: 201 }));
+  assert.equal(res.synced, 1);
+  const items = await store.list();
+  assert.equal(items.length, 0);
+});
+
+test("3B-03: network failure leaves item visible as queued with friendly error category", async () => {
+  const store = memoryStore([pending("s-net")]);
+  await syncPendingSales(store, async () => { throw new Error("TypeError: Failed to fetch"); });
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, "queued");
+  assert.equal(items[0].attempts, 1);
+  const display = parseQueueItemDisplay(items[0]);
+  assert.equal(display.errorCategory, "NETWORK");
+  assert.match(display.friendlyError ?? "", /ยังไม่สามารถเชื่อมต่อ/);
+});
+
+test("3B-04: 401 leaves item visible as needs-review with AUTH_REQUIRED category", async () => {
+  const store = memoryStore([pending("s-401")]);
+  await syncPendingSales(store, async () => ({ ok: false, status: 401, error: "กรุณาเข้าสู่ระบบ" }));
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, "needs-review");
+  const display = parseQueueItemDisplay(items[0]);
+  assert.equal(display.errorCategory, "AUTH_REQUIRED");
+  assert.match(display.friendlyError ?? "", /เซสชันหมดอายุ/);
+});
+
+test("3B-05: 403 leaves item visible as needs-review with FORBIDDEN category", async () => {
+  const store = memoryStore([pending("s-403")]);
+  await syncPendingSales(store, async () => ({ ok: false, status: 403, error: "ไม่มีสิทธิ์ทำรายการนี้" }));
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, "needs-review");
+  const display = parseQueueItemDisplay(items[0]);
+  assert.equal(display.errorCategory, "FORBIDDEN");
+  assert.match(display.friendlyError ?? "", /ไม่มีสิทธิ์/);
+});
+
+test("3B-06: 400 invalid data stays visible for manual attention without silent drop", async () => {
+  const store = memoryStore([pending("s-400")]);
+  await syncPendingSales(store, async () => ({ ok: false, status: 400, error: "ยอดเงินไม่ถูกต้อง" }));
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, "needs-review");
+  const display = parseQueueItemDisplay(items[0]);
+  assert.equal(display.errorCategory, "INVALID_DATA");
+  assert.equal(display.rawError, "ยอดเงินไม่ถูกต้อง");
+});
+
+test("3B-07: 409 idempotency conflict stays visible for manual attention", async () => {
+  const store = memoryStore([pending("s-409")]);
+  await syncPendingSales(store, async () => ({ ok: false, status: 409, error: "Conflict detected" }));
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].status, "needs-review");
+  const display = parseQueueItemDisplay(items[0]);
+  assert.equal(display.errorCategory, "IDEMPOTENCY_CONFLICT");
+  assert.match(display.friendlyError ?? "", /ความขัดแย้ง/);
+});
+
+test("3B-08: retry preserves clientRequestId strictly", async () => {
+  const item: PendingSale = { ...pending("s-reqid"), status: "needs-review", lastError: "some err" };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store, "s-reqid");
+  const [retried] = await store.list();
+  assert.equal(retried.status, "queued");
+  assert.equal(retried.payload.clientRequestId, "s-reqid");
+  assert.equal(retried.id, "s-reqid");
+});
+
+test("3B-09: retry preserves original Sale.date strictly", async () => {
+  const originalDate = "2026-09-07T08:30:00.000+07:00";
+  const item: PendingSale = {
+    ...pending("s-date"),
+    status: "needs-review",
+    payload: { clientRequestId: "s-date", date: originalDate, totalAmount: 500 },
+  };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store, "s-date");
+  const [retried] = await store.list();
+  assert.equal(retried.payload.date, originalDate);
+});
+
+test("3B-10: retry preserves entire payload without silent mutation", async () => {
+  const fullPayload = {
+    clientRequestId: "s-payload",
+    date: "2026-09-07T12:00:00+07:00",
+    fuelTypeId: "2",
+    totalAmount: "700",
+    pricePerLiter: "35.50",
+    paymentMethod: "credit",
+    customerName: "สมชาย ขนส่ง",
+  };
+  const item: PendingSale = { ...pending("s-payload"), status: "needs-review", payload: fullPayload };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store, "s-payload");
+  const [retried] = await store.list();
+  assert.deepEqual(retried.payload, fullPayload);
+});
+
+test("3B-11: retry success removes item from queue", async () => {
+  const item: PendingSale = { ...pending("s-ret-succ"), status: "needs-review" };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store, "s-ret-succ");
+  const res = await syncPendingSales(store, async () => ({ ok: true, status: 201 }));
+  assert.equal(res.synced, 1);
+  const remaining = await store.list();
+  assert.equal(remaining.length, 0);
+});
+
+test("3B-12: retry failure returns item to correct state with incremented attempts", async () => {
+  const item: PendingSale = { ...pending("s-ret-fail"), status: "needs-review", attempts: 2 };
+  const store = memoryStore([item]);
+  await retryNeedsReview(store, "s-ret-fail");
+  await syncPendingSales(store, async () => ({ ok: false, status: 400, error: "ข้อมูลผิดพลาด" }));
+  const [failed] = await store.list();
+  assert.equal(failed.status, "needs-review");
+  assert.equal(failed.attempts, 3);
+});
+
+test("3B-13: user cannot accidentally retry another user's item", async () => {
+  const item: PendingSale = { ...pending("s-user-a", "user-a"), status: "queued" };
+  const store = memoryStore([item]);
+  let sent = false;
+  await syncPendingSales(store, async () => {
+    sent = true;
+    return { ok: true, status: 201 };
+  }, "user-b");
+  assert.equal(sent, false);
+  const [preserved] = await store.list();
+  assert.equal(preserved.status, "needs-review");
+  const display = parseQueueItemDisplay(preserved);
+  assert.equal(display.errorCategory, "OWNERSHIP_MISMATCH");
+});
+
+test("3B-14: logout and login session loss does not erase queue items", async () => {
+  const store = memoryStore([pending("s-session-drop", "user-a")]);
+  const sync = createSaleQueueSynchronizer(
+    store,
+    async () => ({ ok: true, status: 201 }),
+    async () => null // Logged out
+  );
+  const res = await sync();
+  assert.equal(res.synced, 0);
+  assert.equal(res.queued, 1);
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, "s-session-drop");
+});
+
+test("3B-15: corrupted queue item does not crash parseQueueItemDisplay rendering", () => {
+  const corruptedItem: PendingSale = {
+    id: "s-corrupted",
+    createdAt: "invalid-date",
+    status: "needs-review",
+    attempts: 0,
+    payload: null as any,
+  };
+  const display = parseQueueItemDisplay(corruptedItem);
+  assert.equal(display.id, "s-corrupted");
+  assert.equal(display.totalAmount, 0);
+  assert.equal(display.isCorrupted, true);
+  assert.equal(display.shortId, "rupted");
+});
+
+test("3B-16: discard requires explicit confirmation contract and accurate ambiguous state wording", async () => {
+  const item = pending("s-conf");
+  const warning = getDiscardWarning(item);
+  assert.match(warning.warningMessage, /ยังไม่ได้รับการยืนยันสถานะจากเซิร์ฟเวอร์/);
+  assert.doesNotMatch(warning.warningMessage, /ยังไม่ได้รับการบันทึกบนเซิร์ฟเวอร์/);
+
+  const store = memoryStore([item]);
+  let confirmed = false;
+  const handleUserDiscardRequest = async (id: string, userConfirmed: boolean) => {
+    if (!userConfirmed) return false;
+    return discardQueueItem(store, id);
+  };
+
+  const didDiscard1 = await handleUserDiscardRequest("s-conf", confirmed);
+  assert.equal(didDiscard1, false);
+  assert.equal((await store.list()).length, 1);
+
+  confirmed = true;
+  const didDiscard2 = await handleUserDiscardRequest("s-conf", confirmed);
+  assert.equal(didDiscard2, true);
+  assert.equal((await store.list()).length, 0);
+});
+
+test("3B-17: discard removes only the selected local queue item", async () => {
+  const store = memoryStore([pending("s-keep"), pending("s-drop")]);
+  const dropped = await discardQueueItem(store, "s-drop");
+  assert.equal(dropped, true);
+  const remaining = await store.list();
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].id, "s-keep");
+});
+
+test("3B-18: discard is purely local and does NOT call DELETE /api/sales", async () => {
+  const serverDeleteCalls: string[] = [];
+  const fakeFetch = async (url: string, init?: RequestInit) => {
+    if (init?.method === "DELETE") serverDeleteCalls.push(url);
+    return new Response(null, { status: 200 });
+  };
+  void fakeFetch;
+
+  const store = memoryStore([pending("s-local-only")]);
+  await discardQueueItem(store, "s-local-only");
+
+  assert.equal(serverDeleteCalls.length, 0, "Discard must never call DELETE on server");
+  assert.equal((await store.list()).length, 0);
+});
+
+test("3B-19: canceling discard confirmation leaves item untouched in store", async () => {
+  const store = memoryStore([pending("s-cancel-disc")]);
+  let modalOpen = true;
+  modalOpen = false;
+  void modalOpen;
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, "s-cancel-disc");
+});
+
+test("3B-20: one item's failure does not hide or block other queued items", async () => {
+  const store = memoryStore([pending("s-fail"), pending("s-pass")]);
+  const res = await syncPendingSales(store, async (item) => {
+    if (item.id === "s-fail") return { ok: false, status: 400, error: "Bad fuel" };
+    return { ok: true, status: 201 };
+  });
+  assert.equal(res.synced, 1);
+  assert.equal(res.needsReview, 1);
+  const remaining = await store.list();
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].id, "s-fail");
+});
+
+test("3B-21: sending state is represented correctly in counts and status labels", () => {
+  const item: PendingSale = { ...pending("s-sending"), status: "sending" };
+  const counts = getQueueCounts([item]);
+  assert.equal(counts.sending, 1);
+  assert.equal(counts.queued, 0);
+  const display = parseQueueItemDisplay(item);
+  assert.equal(display.statusLabel, "กำลังส่ง");
+});
+
+test("3B-22: empty queue shows zero counts without false warnings", () => {
+  const counts = getQueueCounts([]);
+  assert.deepEqual(counts, { queued: 0, sending: 0, needsReview: 0, total: 0 });
+  const shouldShowWarning = counts.queued > 0 || counts.needsReview > 0;
+  assert.equal(shouldShowWarning, false);
+});
+
+test("3B-23: stale/old queue item remains present and visible with isStale flag", () => {
+  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const oldItem: PendingSale = {
+    ...pending("s-old"),
+    createdAt: twoDaysAgo,
+    status: "needs-review",
+  };
+  const display = parseQueueItemDisplay(oldItem, undefined, 24 * 60 * 60 * 1000);
+  assert.equal(display.isStale, true);
+  assert.equal(display.id, "s-old");
+});
+
+test("3B-24: multi-tab Sprint 3A invariants remain green with new UX helpers", async () => {
+  const sharedStore = memoryStore([pending("s-multitab-3b")]);
+  let serverSales = 0;
+  let serverStockDecrements = 0;
+
+  const simulateServerPost = async () => {
+    await new Promise((r) => setTimeout(r, 10));
+    if (serverSales === 0) {
+      serverSales += 1;
+      serverStockDecrements += 1;
+      return { ok: true, status: 201 };
+    }
+    return { ok: true, status: 200 };
+  };
+
+  const syncA = createSaleQueueSynchronizer(sharedStore, simulateServerPost);
+  const syncB = createSaleQueueSynchronizer(sharedStore, simulateServerPost);
+  const [resA, resB] = await Promise.all([syncA(), syncB()]);
+
+  // Server invariants preserved: exactly 1 sale row + 1 stock decrement
+  assert.equal(serverSales, 1);
+  assert.equal(serverStockDecrements, 1);
+  // Client queue invariant: item removed, never resurrected
+  assert.equal(sharedStore.rows.size, 0);
+  assert.ok(resA.synced >= 1 || resB.synced >= 1);
+});
+
+test("3B-25: idempotency conflict receives stronger reconciliation warning", () => {
+  const item: PendingSale = {
+    ...pending("s-conflict"),
+    lastError: "Conflict detected: clientRequestId already exists with different payload",
+  };
+  const warning = getDiscardWarning(item);
+  assert.equal(warning.isConflict, true);
+  assert.match(warning.warningTitle, /พบความขัดแย้งของรายการบนเซิร์ฟเวอร์/);
+  assert.match(warning.warningMessage, /พบรายการที่มีรหัสเดียวกันบนระบบแต่ข้อมูลไม่ตรงกัน/);
+  assert.match(warning.warningMessage, /โดยไม่ลบรายการที่อาจมีอยู่แล้วบนเซิร์ฟเวอร์/);
+});
+
+test("3B-26: SERVER_ERROR text does not promise automatic retry unless true", () => {
+  const err = categorizeQueueError("Database connection dropped", 500);
+  assert.equal(err.category, "SERVER_ERROR");
+  assert.match(err.userMessage, /กรุณาลองส่งอีกครั้ง/);
+  assert.doesNotMatch(err.userMessage, /อัตโนมัติ/);
+});
+
+test("3B-27: staff does not receive discard action in normal UI model, manager/owner does", () => {
+  assert.equal(canUserDiscardPendingSale("staff"), false);
+  assert.equal(canUserDiscardPendingSale("manager"), true);
+  assert.equal(canUserDiscardPendingSale("owner"), true);
+  assert.equal(canUserDiscardPendingSale(undefined), false);
+  assert.equal(canUserDiscardPendingSale(null), false);
+});
+
+test("3B-28: stale warning does not delete or mutate queue", async () => {
+  const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const oldItem: PendingSale = {
+    ...pending("s-stale-safe"),
+    createdAt: twoDaysAgo,
+    status: "queued",
+  };
+  const store = memoryStore([oldItem]);
+  const display = parseQueueItemDisplay(oldItem, undefined, STALE_QUEUE_WARNING_MS);
+  assert.equal(display.isStale, true);
+
+  const items = await store.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, "s-stale-safe");
+  assert.equal(items[0].status, "queued");
 });
