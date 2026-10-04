@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const debts = await prisma.supplierDebt.findMany({ orderBy: { date: "desc" }, include: { payments: { orderBy: { paidAt: "asc" } } } });
     return NextResponse.json(debts);
@@ -11,6 +15,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const { supplier, amount, note, date } = body;

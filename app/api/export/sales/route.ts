@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 function csvRow(cells: string[]) {
   return cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",");
 }
 
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   const { searchParams } = new URL(req.url);
   const from = searchParams.get("from");
   const to = searchParams.get("to");

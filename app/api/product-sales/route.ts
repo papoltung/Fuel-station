@@ -4,6 +4,9 @@ import { requireRole } from "@/lib/authz";
 import { PRODUCT_SALE_ERROR_CODES } from "@/lib/product-sale";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const date = req.nextUrl.searchParams.get("date");
   let where = {};
   if (date) {

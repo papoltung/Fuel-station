@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateFuelStockCompare } from "@/lib/fuel-stock-compare";
+import { requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const [fuelTypes, stocks, stockChecks] = await Promise.all([
       prisma.fuelType.findMany({ select: { id: true, label: true } }),

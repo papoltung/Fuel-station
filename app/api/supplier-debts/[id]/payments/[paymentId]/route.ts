@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; paymentId: string }> }
 ) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const { id, paymentId } = await params;
     const payment = await prisma.supplierDebtPayment.findUnique({ where: { id: Number(paymentId) } });

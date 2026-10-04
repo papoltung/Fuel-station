@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@supabase/supabase-js";
+import { requireRole } from "@/lib/authz";
 
 const supabase = createClient(
   "https://doglpjixsyuhtabaxmib.supabase.co",
@@ -8,6 +9,9 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const { id } = await params;
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -38,6 +42,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const { id } = await params;
   await prisma.product.update({ where: { id: Number(id) }, data: { image: null } });
   return NextResponse.json({ ok: true });

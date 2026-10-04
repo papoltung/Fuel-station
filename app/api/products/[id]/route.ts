@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const { id } = await params;
   const body = await req.json();
   const product = await prisma.product.update({
@@ -23,6 +27,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const { id } = await params;
   const salesCount = await prisma.productSale.count({ where: { productId: Number(id) } });
   if (salesCount > 0) {

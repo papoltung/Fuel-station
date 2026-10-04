@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const checks = await prisma.stockCheck.findMany({
       include: { fuelType: true },
@@ -16,6 +20,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const { fuelTypeId, actualLiters, note, date } = body;

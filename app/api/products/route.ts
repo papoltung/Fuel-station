@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const all = req.nextUrl.searchParams.get("all") === "1";
   const products = await prisma.product.findMany({
     where: all ? undefined : { isActive: true },
@@ -13,6 +17,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json();
   const { name, unit, size, category, currentPrice, costPrice, currentStock, minStock } = body;
   if (!name || !unit) return NextResponse.json({ error: "name/unit required" }, { status: 400 });

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return auth.response;
+
   const { id } = await params;
   const sale = await prisma.productSale.findUnique({ where: { id: Number(id) } });
   if (!sale) return NextResponse.json({ error: "not found" }, { status: 404 });

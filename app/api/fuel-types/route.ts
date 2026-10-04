@@ -5,6 +5,9 @@ import { requireRole } from "@/lib/authz";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const fuelTypes = await prisma.fuelType.findMany({ orderBy: { name: "asc" } });
   return NextResponse.json(fuelTypes, { headers: { "Cache-Control": "private, no-store" } });
 }

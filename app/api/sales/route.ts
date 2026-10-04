@@ -7,6 +7,9 @@ import { saleSnapshot } from "@/lib/sale-audit";
 import { METER_ERROR_CODES, validatePumpFuel } from "@/lib/meter-context";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const dateStr = new URL(req.url).searchParams.get("date");
   let where = {};
   if (dateStr) {

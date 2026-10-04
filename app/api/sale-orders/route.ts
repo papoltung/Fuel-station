@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/authz";
 
 export async function GET() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const orders = await prisma.saleOrder.findMany({
     where: { status: "pending" },
     include: { fuelType: true },
@@ -11,6 +15,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return auth.response;
+
   const body = await req.json();
   const { fuelTypeId, pumpNo, totalAmount, pricePerLiter, paymentMethod, sellerName, customerName, note } = body;
   if (!fuelTypeId || !totalAmount || !pricePerLiter || !sellerName) {
