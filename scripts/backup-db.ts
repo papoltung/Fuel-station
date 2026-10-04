@@ -21,6 +21,19 @@ export interface BackupDbOptions {
   pgRestorePath?: string;
   schemas?: string[];
   databaseName?: string;
+  throwOnError?: boolean;
+  timestamp?: string;
+  targetDir?: string;
+}
+
+export interface BackupDbResult {
+  status: "success" | "failed";
+  targetDir: string;
+  dumpFilePath: string;
+  sha256: string;
+  sizeBytes: number;
+  manifestPath: string;
+  error?: string;
 }
 
 function resolvePostgresBinary(binaryName: "pg_dump" | "pg_restore", explicitPath?: string): string {
@@ -46,14 +59,22 @@ function resolvePostgresBinary(binaryName: "pg_dump" | "pg_restore", explicitPat
   }
 }
 
-export function runDatabaseBackup(options: BackupDbOptions = {}) {
+export function runDatabaseBackup(options: BackupDbOptions = {}): BackupDbResult {
   const startTime = Date.now();
   const directUrl = options.directUrl ?? process.env.DIRECT_URL;
 
+  const fail = (errMsg: string, code: number = 1): never => {
+    if (options.throwOnError) {
+      throw new Error(errMsg);
+    }
+    process.exit(code);
+  };
+
   if (!directUrl) {
-    console.error("[backup-db] ERROR: DIRECT_URL environment variable is missing.");
+    const msg = "[backup-db] ERROR: DIRECT_URL environment variable is missing.";
+    console.error(msg);
     console.error("[backup-db] Please configure DIRECT_URL in .env or .env.local before running backup.");
-    process.exit(1);
+    fail(msg, 1);
   }
 
   // Detect or verify pg_dump executable
@@ -75,16 +96,17 @@ export function runDatabaseBackup(options: BackupDbOptions = {}) {
     console.error(
       "[backup-db] Recommendation: Install PostgreSQL 17 client tools (winget install PostgreSQL.PostgreSQL.17 or set PG_DUMP_PATH)."
     );
-    process.exit(1);
+    fail(`pg_dump not found: ${msg}`, 1);
   }
 
-  const timestamp = generateBackupTimestamp();
+  const timestamp = options.timestamp ?? generateBackupTimestamp();
   const baseDir = options.outputBaseDir ?? path.join(process.cwd(), "backups", "db");
-  const targetDir = path.join(baseDir, timestamp);
+  const targetDir = options.targetDir ?? path.join(baseDir, timestamp);
 
-  if (fs.existsSync(targetDir)) {
-    console.error(`[backup-db] ERROR: Target backup directory already exists: ${targetDir}. Refusing to overwrite.`);
-    process.exit(1);
+  if (fs.existsSync(targetDir) && !options.targetDir) {
+    const msg = `[backup-db] ERROR: Target backup directory already exists: ${targetDir}. Refusing to overwrite.`;
+    console.error(msg);
+    fail(msg, 1);
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
@@ -145,7 +167,7 @@ export function runDatabaseBackup(options: BackupDbOptions = {}) {
       error: stderrRedacted,
     });
     fs.writeFileSync(manifestFilePath, JSON.stringify(failedManifest, null, 2), "utf8");
-    process.exit(dumpResult.status ?? 1);
+    fail(`pg_dump failed with exit code ${dumpResult.status}: ${stderrRedacted}`, dumpResult.status ?? 1);
   }
 
   // Validate the resulting dump file (Phase 3: file exists and > 0 bytes)
@@ -164,7 +186,7 @@ export function runDatabaseBackup(options: BackupDbOptions = {}) {
       error: validation.reason,
     });
     fs.writeFileSync(manifestFilePath, JSON.stringify(failedManifest, null, 2), "utf8");
-    process.exit(1);
+    fail(`Dump file validation failed: ${validation.reason}`, 1);
   }
 
   // Compute SHA-256
@@ -195,7 +217,7 @@ export function runDatabaseBackup(options: BackupDbOptions = {}) {
       error: `pg_restore --list verification failed: ${restoreErrRedacted}`,
     });
     fs.writeFileSync(manifestFilePath, JSON.stringify(failedManifest, null, 2), "utf8");
-    process.exit(1);
+    fail(`Archive is unreadable according to pg_restore: ${restoreErrRedacted}`, 1);
   }
 
   // Create success manifest
@@ -216,6 +238,15 @@ export function runDatabaseBackup(options: BackupDbOptions = {}) {
   console.log(`[backup-db] Archive size: ${(validation.sizeBytes / 1024).toFixed(2)} KB`);
   console.log(`[backup-db] SHA-256: ${sha256}`);
   console.log(`[backup-db] Manifest written: ${manifestFilePath}`);
+
+  return {
+    status: "success",
+    targetDir,
+    dumpFilePath,
+    sha256,
+    sizeBytes: validation.sizeBytes,
+    manifestPath: manifestFilePath,
+  };
 }
 
 // Execute when invoked directly from CLI

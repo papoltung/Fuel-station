@@ -21,6 +21,20 @@ export interface BackupStorageOptions {
   supabaseKey?: string;
   bucketName?: string;
   outputBaseDir?: string;
+  throwOnError?: boolean;
+  timestamp?: string;
+  targetDir?: string;
+}
+
+export interface BackupStorageResult {
+  status: "success" | "partial" | "failed";
+  targetDir: string;
+  totalDiscovered: number;
+  totalDownloaded: number;
+  totalFailed: number;
+  manifestPath: string;
+  files: StorageFileEntry[];
+  error?: string;
 }
 
 interface StorageItem {
@@ -29,8 +43,15 @@ interface StorageItem {
   metadata?: Record<string, unknown> | null;
 }
 
-export async function runStorageBackup(options: BackupStorageOptions = {}) {
+export async function runStorageBackup(options: BackupStorageOptions = {}): Promise<BackupStorageResult> {
   const startTime = Date.now();
+
+  const fail = (errMsg: string, code: number = 1): never => {
+    if (options.throwOnError) {
+      throw new Error(errMsg);
+    }
+    process.exit(code);
+  };
 
   const supabaseUrl =
     options.supabaseUrl ??
@@ -48,8 +69,9 @@ export async function runStorageBackup(options: BackupStorageOptions = {}) {
   const bucketName = options.bucketName ?? "products";
 
   if (!supabaseUrl || !supabaseKey) {
-    console.error("[backup-storage] ERROR: Supabase URL or Key is missing.");
-    process.exit(1);
+    const msg = "[backup-storage] ERROR: Supabase URL or Key is missing.";
+    console.error(msg);
+    fail(msg, 1);
   }
 
   // Avoid Node 20 missing WebSocket error in Supabase Realtime client
@@ -59,13 +81,14 @@ export async function runStorageBackup(options: BackupStorageOptions = {}) {
     realtime: { transport: DummyTransport as unknown as typeof WebSocket },
   });
 
-  const timestamp = generateBackupTimestamp();
+  const timestamp = options.timestamp ?? generateBackupTimestamp();
   const baseDir = options.outputBaseDir ?? path.join(process.cwd(), "backups", "storage");
-  const targetDir = path.join(baseDir, timestamp);
+  const targetDir = options.targetDir ?? path.join(baseDir, timestamp);
 
-  if (fs.existsSync(targetDir)) {
-    console.error(`[backup-storage] ERROR: Target backup directory already exists: ${targetDir}. Refusing to overwrite.`);
-    process.exit(1);
+  if (fs.existsSync(targetDir) && !options.targetDir) {
+    const msg = `[backup-storage] ERROR: Target backup directory already exists: ${targetDir}. Refusing to overwrite.`;
+    console.error(msg);
+    fail(msg, 1);
   }
 
   fs.mkdirSync(targetDir, { recursive: true });
@@ -140,7 +163,7 @@ export async function runStorageBackup(options: BackupStorageOptions = {}) {
       error: redactSecretString(msg),
     });
     fs.writeFileSync(manifestFilePath, JSON.stringify(failedManifest, null, 2), "utf8");
-    process.exit(1);
+    fail(`Storage discovery failed: ${redactSecretString(msg)}`, 1);
   }
 
   console.log(`[backup-storage] Discovered ${allObjects.length} object(s) in bucket "${bucketName}"`);
@@ -209,8 +232,18 @@ export async function runStorageBackup(options: BackupStorageOptions = {}) {
   console.log(`[backup-storage] Manifest written: ${manifestFilePath}`);
 
   if (status !== "success") {
-    process.exit(1);
+    fail(`Storage backup ended with status "${status}" (${failedPaths.length} failed downloads)`, 1);
   }
+
+  return {
+    status,
+    targetDir,
+    totalDiscovered: allObjects.length,
+    totalDownloaded: downloadedFiles.length,
+    totalFailed: failedPaths.length,
+    manifestPath: manifestFilePath,
+    files: downloadedFiles,
+  };
 }
 
 // Execute when invoked directly from CLI
