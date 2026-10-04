@@ -1,96 +1,95 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-function toDateKey(d: Date) {
-  return new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split("T")[0];
-}
+import { calculateFuelStockCompare } from "@/lib/fuel-stock-compare";
 
 export async function GET() {
   try {
     const [fuelTypes, stocks, stockChecks] = await Promise.all([
-      prisma.fuelType.findMany(),
-      prisma.fuelStock.findMany({ include: { fuelType: true } }),
-      prisma.stockCheck.findMany({ orderBy: { date: "desc" }, distinct: ["fuelTypeId"] }),
+      prisma.fuelType.findMany({ select: { id: true, label: true } }),
+      prisma.fuelStock.findMany({ select: { fuelTypeId: true, currentLiters: true } }),
+      prisma.stockCheck.findMany({
+        orderBy: { date: "desc" },
+        distinct: ["fuelTypeId"],
+        select: { fuelTypeId: true, date: true, actualLiters: true },
+      }),
     ]);
 
-    const earliestCheck =
-      stockChecks.length > 0
-        ? new Date(Math.min(...stockChecks.map((c) => new Date(c.date).getTime())))
-        : undefined;
+    if (fuelTypes.length === 0) {
+      return NextResponse.json([]);
+    }
 
-    const [purchases, sales, meterPeriods] = await Promise.all([
-      prisma.fuelPurchase.findMany({
-        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
-        orderBy: { date: "asc" },
+    // Build per-fuel boundaries: if a StockCheck exists for that fuel, only query transactions strictly after it.
+    // If no StockCheck exists, query transactions for that fuel type from inception without global contamination.
+    const fuelFilters = fuelTypes.map((ft) => {
+      const check = stockChecks.find((c) => c.fuelTypeId === ft.id);
+      return check
+        ? { fuelTypeId: ft.id, date: { gt: check.date } }
+        : { fuelTypeId: ft.id };
+    });
+
+    const whereClause = { OR: fuelFilters };
+
+    const [purchasesGrouped, salesGrouped, meterPeriods, sales] = await Promise.all([
+      // Database-side aggregation for FuelPurchase
+      prisma.fuelPurchase.groupBy({
+        by: ["fuelTypeId"],
+        where: whereClause,
+        _sum: { liters: true },
       }),
-      prisma.sale.findMany({
-        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
-        orderBy: { date: "asc" },
+      // Database-side aggregation for Sale totals (soldByCash)
+      prisma.sale.groupBy({
+        by: ["fuelTypeId"],
+        where: whereClause,
+        _sum: { liters: true },
       }),
+      // Only closed meter periods with compact scalar fields needed for meter coverage matching
       prisma.meterPeriod.findMany({
-        where: earliestCheck ? { date: { gte: earliestCheck } } : undefined,
+        where: {
+          ...whereClause,
+          meterEnd: { not: null },
+          liters: { not: null },
+        },
+        select: {
+          fuelTypeId: true,
+          date: true,
+          pumpId: true,
+          liters: true,
+          meterEnd: true,
+        },
+        orderBy: { date: "asc" },
+      }),
+      // Compact scalar fields needed for uncovered day/pump sales estimation
+      prisma.sale.findMany({
+        where: whereClause,
+        select: {
+          fuelTypeId: true,
+          date: true,
+          pumpId: true,
+          liters: true,
+        },
         orderBy: { date: "asc" },
       }),
     ]);
 
-    const result = fuelTypes.map((ft) => {
-      const lastCheck = stockChecks.find((c) => c.fuelTypeId === ft.id);
-      const checkDate = lastCheck?.date ?? null;
-      const checkActual = lastCheck?.actualLiters ?? 0;
+    const purchasedTotalsByFuel: Record<number, number> = {};
+    for (const p of purchasesGrouped) {
+      purchasedTotalsByFuel[p.fuelTypeId] = p._sum.liters ?? 0;
+    }
 
-      const isAfter = (d: Date) => !checkDate || d > checkDate;
+    const soldTotalsByFuel: Record<number, number> = {};
+    for (const s of salesGrouped) {
+      soldTotalsByFuel[s.fuelTypeId] = s._sum.liters ?? 0;
+    }
 
-      const purchasesAfter = purchases.filter((p) => p.fuelTypeId === ft.id && isAfter(new Date(p.date)));
-      const totalPurchasedAfter = purchasesAfter.reduce((a, p) => a + p.liters, 0);
-
-      // ตำเงิน: Sale.liters ทั้งหมดหลัง check
-      const salesAfter = sales.filter((s) => s.fuelTypeId === ft.id && isAfter(new Date(s.date)));
-      const soldByCash = salesAfter.reduce((a, s) => a + s.liters, 0);
-
-      // ตัวมิเตอร์: หาวันที่มี MeterPeriod ปิดแล้ว → ใช้ meter
-      //              วันที่ไม่มี / ยังเปิดอยู่ → ใช้ Sale.liters แทน (estimate)
-      const closedMeterPeriods = meterPeriods.filter(
-        (m) => m.fuelTypeId === ft.id && m.liters !== null && m.meterEnd !== null && isAfter(new Date(m.date))
-      );
-
-      const meterKeys = new Set(closedMeterPeriods.map((m) => `${toDateKey(new Date(m.date))}:${m.pumpId ?? "legacy"}`));
-
-      // ลิตรจากมิเตอร์จริง (วันที่ปิดรอบ)
-      const litersByMeter = closedMeterPeriods.reduce((a, m) => a + (m.liters ?? 0), 0);
-
-      // ลิตรจาก Sales วันที่ไม่มีมิเตอร์ปิด (estimate)
-      const salesEstimate = salesAfter
-        .filter((s) => s.pumpId === null || !meterKeys.has(`${toDateKey(new Date(s.date))}:${s.pumpId}`))
-        .reduce((a, s) => a + s.liters, 0);
-
-      const soldByMeterEstimated = litersByMeter + salesEstimate;
-      const meterDaysCount = new Set(closedMeterPeriods.map((m) => toDateKey(new Date(m.date)))).size;
-      const estimateDaysCount = new Set(
-        salesAfter
-          .filter((s) => s.pumpId === null || !meterKeys.has(`${toDateKey(new Date(s.date))}:${s.pumpId}`))
-          .map((s) => toDateKey(new Date(s.date)))
-      ).size;
-
-      const systemStock = stocks.find((s) => s.fuelTypeId === ft.id)?.currentLiters ?? 0;
-      const stockByCash = checkActual + totalPurchasedAfter - soldByCash;
-      const stockByMeter = checkActual + totalPurchasedAfter - soldByMeterEstimated;
-      const diffMeterVsCash = stockByMeter - stockByCash;
-
-      return {
-        fuelTypeId: ft.id,
-        label: ft.label,
-        lastCheckDate: checkDate,
-        lastCheckActual: checkActual,
-        totalPurchasedAfter,
-        soldByCash,
-        soldByMeter: soldByMeterEstimated,
-        systemStock,
-        stockByCash,
-        stockByMeter,
-        diffMeterVsCash,
-        meterDaysCount,
-        estimateDaysCount,
-      };
+    const result = calculateFuelStockCompare({
+      fuelTypes,
+      stocks,
+      stockChecks,
+      purchases: [],
+      sales,
+      meterPeriods,
+      purchasedTotalsByFuel,
+      soldTotalsByFuel,
     });
 
     return NextResponse.json(result);
