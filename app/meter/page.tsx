@@ -22,17 +22,14 @@ type MeterPeriod = {
   totalRevenue: number | null;
   note: string | null;
   pumpId: number | null;
-  shiftId: number | null;
   fuelType: { label: string; name: string };
   pump: { id: number; number: string; label: string } | null;
-  shift: { id: number; status: string; openedById: number; openedByName: string; closedAt: string | null } | null;
   openedByName: string | null;
   closedByName: string | null;
 };
 
 type Sale = {
   pumpId: number | null;
-  shiftId: number | null;
   fuelTypeId: number;
   totalAmount: number;
   liters: number;
@@ -243,8 +240,7 @@ export default function MeterPage() {
     fuelName: string;
     pumpId: number | null;
     pumpLabel: string;
-    shiftId: number | null;
-    shiftName: string;
+    periodLabel: string;
     periods: MeterPeriod[];
     meterLiters: number;
     meterRevenue: number;
@@ -265,7 +261,6 @@ export default function MeterPage() {
           (s) =>
             s.fuelTypeId === p.fuelTypeId &&
             s.pumpId === p.pumpId &&
-            s.shiftId === p.shiftId &&
             new Date(s.date).toDateString() === dateStr
         );
 
@@ -277,8 +272,7 @@ export default function MeterPage() {
           fuelName: p.fuelType.name,
           pumpId: p.pumpId,
           pumpLabel: p.pump?.label ?? "หัวจ่ายเดิม",
-          shiftId: p.shiftId,
-          shiftName: p.shift ? `ข้อมูลเดิม #${p.shift.id} · ${p.shift.openedByName}` : "รอบปัจจุบัน",
+          periodLabel: p.meterEnd != null ? `รอบที่ ${p.id}` : "รอบปัจจุบัน",
           periods: [],
           meterLiters: 0,
           meterRevenue: 0,
@@ -449,7 +443,7 @@ export default function MeterPage() {
                         {shortDate(g.periods[0].date)}
                       </p>
                       <p className="mt-1 text-xs font-semibold text-blue-600">
-                        {g.pumpLabel} · {g.shiftName}
+                        {g.pumpLabel} · {g.periodLabel}
                       </p>
                     </div>
 
@@ -572,7 +566,7 @@ export default function MeterPage() {
                         {shortDate(g.periods[0].date)}
                       </p>
                       <p className="mt-1 text-xs font-semibold text-blue-600">
-                        {g.pumpLabel} · {g.shiftName}
+                        {g.pumpLabel} · {g.periodLabel}
                       </p>
                     </div>
 

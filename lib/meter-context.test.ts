@@ -2,20 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canCloseMeter, validatePumpFuel } from "./meter-context";
 
-test("only the shift owner or owner can close an open meter", () => {
-  assert.equal(canCloseMeter({ actorId: 7, actorRole: "staff", shiftOwnerId: 7, shiftStatus: "open", meterEnd: null }), true);
-  assert.equal(canCloseMeter({ actorId: 9, actorRole: "manager", shiftOwnerId: 7, shiftStatus: "open", meterEnd: null }), false);
-  assert.equal(canCloseMeter({ actorId: 9, actorRole: "owner", shiftOwnerId: 7, shiftStatus: "open", meterEnd: null }), true);
-});
-
-test("closed shifts and already closed meters cannot be closed again", () => {
-  assert.equal(canCloseMeter({ actorId: 7, actorRole: "staff", shiftOwnerId: 7, shiftStatus: "closed", meterEnd: null }), false);
-  assert.equal(canCloseMeter({ actorId: 7, actorRole: "staff", shiftOwnerId: 7, shiftStatus: "open", meterEnd: 10.5 }), false);
-});
-
-test("allows the user who opened a shiftless meter to close it", () => {
+test("only the user who opened the meter or an owner can close an open meter", () => {
   assert.equal(canCloseMeter({ actorId: 7, actorRole: "staff", openedById: 7, meterEnd: null }), true);
-  assert.equal(canCloseMeter({ actorId: 9, actorRole: "staff", openedById: 7, meterEnd: null }), false);
+  assert.equal(canCloseMeter({ actorId: 9, actorRole: "manager", openedById: 7, meterEnd: null }), false);
+  assert.equal(canCloseMeter({ actorId: 9, actorRole: "owner", openedById: 7, meterEnd: null }), true);
+});
+
+test("already closed meters cannot be closed again", () => {
+  assert.equal(canCloseMeter({ actorId: 7, actorRole: "staff", openedById: 7, meterEnd: 10.5 }), false);
+  assert.equal(canCloseMeter({ actorId: 9, actorRole: "owner", openedById: 7, meterEnd: 10.5 }), false);
 });
 
 test("rejects a pump configured for a different fuel", () => {

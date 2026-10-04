@@ -42,10 +42,7 @@ export async function GET(req: NextRequest) {
     },
   } : {};
   const ownerWhere = auth.user.role === "owner" ? {} : {
-    OR: [
-      { openedById: auth.user.id },
-      { shift: { openedById: auth.user.id } },
-    ],
+    openedById: auth.user.id,
   };
 
   try {
@@ -54,7 +51,6 @@ export async function GET(req: NextRequest) {
       include: {
         fuelType: true,
         pump: true,
-        shift: { select: { id: true, status: true, openedById: true, openedByName: true, closedAt: true } },
       },
       orderBy: { date: "desc" },
       take: 100,
@@ -97,7 +93,6 @@ export async function POST(req: NextRequest) {
           date,
           fuelTypeId,
           pumpId,
-          shiftId: null,
           meterStart,
           meterEnd,
           liters,
@@ -117,7 +112,6 @@ export async function POST(req: NextRequest) {
         include: {
           fuelType: true,
           pump: true,
-          shift: { select: { id: true, status: true, openedById: true, openedByName: true, closedAt: true } },
         },
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

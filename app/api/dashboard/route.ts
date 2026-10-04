@@ -13,10 +13,7 @@ export async function GET(req: NextRequest) {
   const end = new Date(`${date}T23:59:59.999+07:00`);
   const where = { date: { gte: start, lte: end } };
   const meterOwnerWhere = auth.user.role === "owner" ? {} : {
-    OR: [
-      { openedById: auth.user.id },
-      { shift: { openedById: auth.user.id } },
-    ],
+    openedById: auth.user.id,
   };
   const summaryRequest = new NextRequest(new URL(`/api/sales/summary?date=${date}`, req.url));
 

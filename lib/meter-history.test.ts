@@ -16,14 +16,11 @@ test("offers close controls only for meter periods that are still open", () => {
   assert.deepEqual(openMeterPeriods(rows), [{ id: 2, meterEnd: null }]);
 });
 
-test("keeps shiftless meter rounds separate so closed rounds enter history", () => {
+test("keeps multiple meter periods on the same pump in one day separate in history", () => {
   const base = { date: "2026-09-09T01:00:00.000Z", fuelTypeId: 1, pumpId: 2 };
-  assert.notEqual(
-    meterHistoryGroupKey({ ...base, id: 10, shiftId: null }),
-    meterHistoryGroupKey({ ...base, id: 11, shiftId: null }),
-  );
-  assert.equal(
-    meterHistoryGroupKey({ ...base, id: 10, shiftId: 7 }),
-    meterHistoryGroupKey({ ...base, id: 11, shiftId: 7 }),
-  );
+  const period1 = meterHistoryGroupKey({ ...base, id: 10 });
+  const period2 = meterHistoryGroupKey({ ...base, id: 11 });
+  assert.notEqual(period1, period2);
+  assert.match(period1, /__period-10$/);
+  assert.match(period2, /__period-11$/);
 });

@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const end = new Date(dateStr + "T23:59:59.999+07:00");
     where = { date: { gte: start, lte: end } };
   }
-  const sales = await prisma.sale.findMany({ where, include: { fuelType: true, pump: true, shift: { select: { id: true, status: true, openedById: true } } }, orderBy: { createdAt: "desc" }, take: dateStr ? undefined : 200 });
+  const sales = await prisma.sale.findMany({ where, include: { fuelType: true, pump: true }, orderBy: { createdAt: "desc" }, take: dateStr ? undefined : 200 });
   return NextResponse.json(sales);
 }
 
@@ -45,10 +45,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (input.clientRequestId) {
-    const existing = await prisma.sale.findUnique({ where: { clientRequestId: input.clientRequestId }, include: { fuelType: true, shift: true, pump: true } });
+    const existing = await prisma.sale.findUnique({ where: { clientRequestId: input.clientRequestId }, include: { fuelType: true, pump: true } });
     if (existing) {
       const createdBy = await prisma.saleAudit.findFirst({ where: { saleId: existing.id, action: "create" }, select: { actorId: true } });
-      if ((createdBy?.actorId ?? existing.shift?.openedById) !== auth.user.id) return NextResponse.json({ error: "ไม่อนุญาตให้ใช้รายการของบัญชีอื่น" }, { status: 403 });
+      if (createdBy?.actorId !== auth.user.id) return NextResponse.json({ error: "ไม่อนุญาตให้ใช้รายการของบัญชีอื่น" }, { status: 403 });
       if (isSameSaleRequest(existing, input, pumpId)) return NextResponse.json(existing, { status: 200, headers: { "Idempotent-Replay": "true" } });
       return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
     }
@@ -77,10 +77,9 @@ export async function POST(req: NextRequest) {
           paymentMethod: input.paymentMethod,
           customerName: input.customerName,
           note: input.note,
-          shiftId: null,
           pumpId: pump?.id ?? null,
         },
-        include: { fuelType: true, pump: true, shift: { select: { id: true, status: true, openedById: true } } },
+        include: { fuelType: true, pump: true },
       });
       await tx.fuelStock.upsert({
         where: { fuelTypeId: input.fuelTypeId },
@@ -93,9 +92,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(sale, { status: 201 });
   } catch (error) {
     if (input.clientRequestId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const existing = await prisma.sale.findUnique({ where: { clientRequestId: input.clientRequestId }, include: { fuelType: true, shift: true, pump: true } });
+      const existing = await prisma.sale.findUnique({ where: { clientRequestId: input.clientRequestId }, include: { fuelType: true, pump: true } });
       const createdBy = existing ? await prisma.saleAudit.findFirst({ where: { saleId: existing.id, action: "create" }, select: { actorId: true } }) : null;
-      if (existing && (createdBy?.actorId ?? existing.shift?.openedById) === auth.user.id && isSameSaleRequest(existing, input, pumpId)) return NextResponse.json(existing, { status: 200, headers: { "Idempotent-Replay": "true" } });
+      if (existing && createdBy?.actorId === auth.user.id && isSameSaleRequest(existing, input, pumpId)) return NextResponse.json(existing, { status: 200, headers: { "Idempotent-Replay": "true" } });
       return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
     }
     if (error instanceof Error && error.message === METER_ERROR_CODES.PUMP_NOT_FOUND) return NextResponse.json({ error: "ไม่พบหัวจ่ายหรือหัวจ่ายถูกปิดใช้งาน", code: METER_ERROR_CODES.PUMP_NOT_FOUND }, { status: 404 });

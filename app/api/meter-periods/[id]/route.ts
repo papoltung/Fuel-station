@@ -17,16 +17,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const existing = await prisma.meterPeriod.findUnique({
       where: { id },
-      include: { shift: true, pump: true, fuelType: true },
+      include: { pump: true, fuelType: true },
     });
     if (!existing) return NextResponse.json({ error: "ไม่พบรายการมิเตอร์", code: "NOT_FOUND" }, { status: 404 });
     if (!existing.pump || existing.openedById === null) {
       return NextResponse.json({ error: "รายการเก่าไม่มีข้อมูลผู้เปิดหรือหัวจ่าย จึงปิดรายการไม่ได้", code: "METER_CONTEXT_REQUIRED" }, { status: 409 });
     }
-    if (existing.meterEnd !== null || existing.shift?.status === "closed") {
+    if (existing.meterEnd !== null) {
       return NextResponse.json({ error: "รอบมิเตอร์นี้ปิดไปแล้ว กรุณาโหลดหน้าใหม่", code: "METER_ALREADY_CLOSED" }, { status: 409 });
     }
-    if (!canCloseMeter({ actorId: auth.user.id, actorRole: auth.user.role, openedById: existing.openedById, shiftOwnerId: existing.shift?.openedById, shiftStatus: existing.shift?.status, meterEnd: existing.meterEnd })) {
+    if (!canCloseMeter({ actorId: auth.user.id, actorRole: auth.user.role, openedById: existing.openedById, meterEnd: existing.meterEnd })) {
       return NextResponse.json({ error: "มีเฉพาะผู้เปิดรอบหรือ Owner เท่านั้นที่ปิดมิเตอร์ได้", code: "METER_FORBIDDEN" }, { status: 403 });
     }
     if (end <= existing.meterStart) {
@@ -48,7 +48,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       include: {
         fuelType: true,
         pump: true,
-        shift: { select: { id: true, status: true, openedById: true, openedByName: true, closedAt: true } },
       },
     });
     return NextResponse.json(updated);

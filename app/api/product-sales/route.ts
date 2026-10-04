@@ -47,7 +47,6 @@ export async function POST(req: NextRequest) {
           customerName: customerName?.trim() || null,
           note: note?.trim() || null,
           date: date ? new Date(date) : new Date(),
-          shiftId: null,
         },
         include: { product: true },
       });

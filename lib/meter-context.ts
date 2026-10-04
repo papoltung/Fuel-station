@@ -20,11 +20,8 @@ export function canCloseMeter(input: {
   actorId: number;
   actorRole: string;
   openedById?: number | null;
-  shiftOwnerId?: number;
-  shiftStatus?: string;
   meterEnd: number | null;
 }) {
-  if (input.meterEnd !== null || input.shiftStatus === "closed") return false;
-  const ownerId = input.openedById ?? input.shiftOwnerId;
-  return input.actorRole === "owner" || input.actorId === ownerId;
+  if (input.meterEnd !== null) return false;
+  return input.actorRole === "owner" || (input.openedById != null && input.actorId === input.openedById);
 }
