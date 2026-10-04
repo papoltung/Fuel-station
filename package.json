@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "seed": "npx tsx prisma/seed.ts"
+    "seed": "npx tsx prisma/seed.ts",
+    "backup:db": "npx tsx scripts/backup-db.ts",
+    "backup:storage": "npx tsx scripts/backup-storage.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",

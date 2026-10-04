@@ -50,3 +50,9 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# backups
+backups/
+*.dump
+*.backup
+*.sql.gz
