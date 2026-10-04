@@ -20,16 +20,53 @@ export async function GET(req: NextRequest) {
   const [summaryResponse, stocks, sales, meters, productSales] = await Promise.all([
     getSalesSummary(summaryRequest),
     auth.user.role === "owner"
-      ? prisma.fuelStock.findMany({ include: { fuelType: true }, orderBy: { fuelTypeId: "asc" } })
+      ? prisma.fuelStock.findMany({
+          select: {
+            fuelTypeId: true,
+            currentLiters: true,
+            fuelType: { select: { id: true, name: true, label: true } },
+          },
+          orderBy: { fuelTypeId: "asc" },
+        })
       : Promise.resolve([]),
-    prisma.sale.findMany({ where, include: { fuelType: true, pump: true }, orderBy: { createdAt: "desc" } }),
-    prisma.meterPeriod.findMany({
-      where: { ...where, ...meterOwnerWhere },
-      include: { fuelType: true },
-      orderBy: { date: "desc" },
-      take: 100,
+    prisma.sale.findMany({
+      where,
+      select: {
+        id: true,
+        date: true,
+        sellerName: true,
+        totalAmount: true,
+        paymentMethod: true,
+        pumpNo: true,
+        fuelType: { select: { id: true, name: true, label: true } },
+      },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      take: 8,
     }),
-    prisma.productSale.findMany({ where, include: { product: true }, orderBy: { createdAt: "desc" } }),
+    prisma.meterPeriod.findMany({
+      where: { ...where, ...meterOwnerWhere, meterEnd: null },
+      select: {
+        id: true,
+        meterEnd: true,
+        fuelType: { select: { id: true, name: true, label: true } },
+      },
+      orderBy: { date: "desc" },
+      take: 20,
+    }),
+    prisma.productSale.findMany({
+      where,
+      select: {
+        id: true,
+        date: true,
+        sellerName: true,
+        totalAmount: true,
+        paymentMethod: true,
+        quantity: true,
+        product: { select: { id: true, name: true } },
+      },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      take: 8,
+    }),
   ]);
 
   if (!summaryResponse.ok) return NextResponse.json({ error: "โหลดข้อมูลสรุปไม่สำเร็จ" }, { status: 500 });
