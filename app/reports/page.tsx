@@ -3,6 +3,11 @@ import { requireRole } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { estimateProfit, reportDay } from "@/lib/profit";
 import { reconcileMeter } from "@/lib/meter-reconciliation";
+import {
+  fetchPriorBaselines,
+  getUnitCostForSale,
+  sortPurchaseCandidates,
+} from "@/lib/report-fuel-cost";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "รายงานกำไร | FuelPOS" };
@@ -22,12 +27,19 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   let comparison;
   try {
     const where = { date: { gte: range.start, lt: range.end } };
-    const [sales, products, purchases, periods] = await Promise.all([
+    const [sales, products, periods, todayPurchases] = await Promise.all([
       prisma.sale.findMany({ where, include: { fuelType: true, pump: true }, orderBy: { date: "asc" } }),
       prisma.productSale.findMany({ where, include: { product: true }, orderBy: { date: "asc" } }),
-      prisma.fuelPurchase.findMany({ where: { date: { lt: range.end } }, orderBy: [{ date: "desc" }, { id: "desc" }], select: { fuelTypeId: true, date: true, costPerLiter: true } }),
       prisma.meterPeriod.findMany({ where, include: { fuelType: true, pump: true } }),
+      prisma.fuelPurchase.findMany({
+        where: { date: { gte: range.start, lt: range.end } },
+        orderBy: [{ date: "desc" }, { id: "desc" }],
+        select: { id: true, fuelTypeId: true, date: true, costPerLiter: true },
+      }),
     ]);
+    const relevantFuelTypeIds = [...new Set(sales.map(s => s.fuelTypeId))];
+    const priorBaselines = await fetchPriorBaselines(range.start, relevantFuelTypeIds);
+    const purchases = sortPurchaseCandidates([...todayPurchases, ...priorBaselines]);
     const contextKey = (row: { fuelTypeId: number; pumpId: number | null }) => `${row.fuelTypeId}:${row.pumpId ?? "legacy"}`;
     const pumpSales = sales.filter(row => row.pumpId !== null);
     const contextKeys = [...new Set([...pumpSales.map(contextKey), ...periods.filter(row => row.pumpId !== null).map(contextKey)])];
@@ -42,7 +54,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
     });
     report = estimateProfit([
       ...sales.map(sale => ({ label: sale.fuelType.label, revenue: sale.totalAmount, quantity: sale.liters,
-        unitCost: purchases.find(purchase => purchase.fuelTypeId === sale.fuelTypeId && purchase.date <= sale.date)?.costPerLiter ?? null })),
+        unitCost: getUnitCostForSale(sale, purchases) })),
       ...products.map(sale => ({ label: `${sale.product.name} · ขายโดย ${sale.sellerName}`, revenue: sale.totalAmount, quantity: sale.quantity, unitCost: sale.costPriceAtSale ?? sale.product.costPrice })),
     ]);
   } catch {
