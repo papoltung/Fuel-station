@@ -8,6 +8,7 @@ import {
   evaluateRetentionCandidates,
   calculateBackupHealth,
   parseBackupTimestampFromRunId,
+  discoverLatestVerifiedRemoteBackup,
 } from "./offsite-storage";
 import {
   executeBackupRun,
@@ -362,7 +363,7 @@ test("9b. backup health degraded when >6h target RPO but within 8h grace window"
   });
 
   assert.equal(health.healthState, "DEGRADED");
-  assert.match(health.healthReason, /is within 8h grace window/);
+  assert.match(health.healthReason, /within 2h operational grace/);
 });
 
 // 9c. local verification PASS + off-site skipped => DEGRADED
@@ -534,4 +535,180 @@ test("16. successful job exits zero", async () => {
   assert.equal(result.overallStatus, "success");
 
   fs.rmSync(env.tmpDir, { recursive: true, force: true });
+});
+
+// 17. discoverLatestVerifiedRemoteBackup finds latest run with _VERIFIED.json commit marker
+test("17. discoverLatestVerifiedRemoteBackup finds latest run with _VERIFIED.json commit marker", async () => {
+  const mockClient = new MockOffsiteStorageClient();
+  const basePrefix = "fuel-station/runs";
+
+  // Simulate two remote runs: an older run without commit marker, and a newer run with commit marker
+  const uncommittedRunId = "2026-10-04T080000Z";
+  const verifiedRunId = "2026-10-04T120000Z";
+
+  // Uncommitted run: has backup-run.json but NO _VERIFIED.json
+  const uncommittedManifest = JSON.stringify({
+    runId: uncommittedRunId,
+    overallStatus: "success",
+    createdAt: "2026-10-04T08:00:00Z",
+  });
+  const uncommittedTmp = path.join(os.tmpdir(), `uncommitted-${Date.now()}.json`);
+  fs.writeFileSync(uncommittedTmp, uncommittedManifest);
+  await mockClient.uploadFile(uncommittedTmp, `${basePrefix}/${uncommittedRunId}/backup-run.json`, "application/json");
+  fs.unlinkSync(uncommittedTmp);
+
+  // Verified run: has _VERIFIED.json commit marker
+  const verifiedMarker = JSON.stringify({
+    runId: verifiedRunId,
+    status: "verified",
+    verifiedAt: "2026-10-04T12:01:30Z",
+    verifiedBy: "deep-round-trip-check",
+  });
+  const verifiedTmp = path.join(os.tmpdir(), `verified-${Date.now()}.json`);
+  fs.writeFileSync(verifiedTmp, verifiedMarker);
+  await mockClient.uploadFile(verifiedTmp, `${basePrefix}/${verifiedRunId}/_VERIFIED.json`, "application/json");
+  fs.unlinkSync(verifiedTmp);
+
+  const discovered = await discoverLatestVerifiedRemoteBackup(mockClient, `${basePrefix}/`);
+  assert.ok(discovered, "Should have discovered the verified remote backup");
+  assert.equal(discovered.runId, verifiedRunId);
+  assert.equal(discovered.status, "verified");
+  assert.equal(discovered.verifiedAt, "2026-10-04T12:01:30Z");
+});
+
+// 18. discoverLatestVerifiedRemoteBackup ignores runs without _VERIFIED.json marker
+test("18. discoverLatestVerifiedRemoteBackup ignores runs without _VERIFIED.json marker", async () => {
+  const mockClient = new MockOffsiteStorageClient();
+  const basePrefix = "fuel-station/runs";
+
+  // Run uploaded all files but deep verification failed before writing _VERIFIED.json
+  const runId = "2026-10-04T080000Z";
+  const manifest = JSON.stringify({
+    runId,
+    overallStatus: "success",
+    createdAt: "2026-10-04T08:00:00Z",
+  });
+  const tmp = path.join(os.tmpdir(), `no-marker-${Date.now()}.json`);
+  fs.writeFileSync(tmp, manifest);
+  await mockClient.uploadFile(tmp, `${basePrefix}/${runId}/backup-run.json`, "application/json");
+  fs.unlinkSync(tmp);
+
+  const discovered = await discoverLatestVerifiedRemoteBackup(mockClient, `${basePrefix}/`);
+  assert.equal(discovered, null, "Prefix without _VERIFIED.json must not be treated as a verified backup");
+});
+
+// 19. 4h cadence / 6h Target RPO: fresh at <= 6h, missed (DEGRADED) at > 6h
+test("19. 4h cadence / 6h Target RPO: fresh at <= 6h, missed (DEGRADED) at > 6h", () => {
+  // Case A: 4h elapsed since last success, latest attempt failed => DEGRADED (still within 6h Target RPO)
+  const health4h = calculateBackupHealth({
+    currentAttemptAt: new Date("2026-10-04T16:00:00Z"),
+    lastAttemptStatus: "failed",
+    lastErrorCategory: "db_dump",
+    previousSuccessfulBackupAt: "2026-10-04T12:00:00Z",
+    databaseStatus: "failed",
+    storageStatus: "not_run",
+    offsiteStatus: "failed",
+  });
+  assert.equal(health4h.healthState, "DEGRADED");
+  assert.match(health4h.healthReason, /4\.0h ago/);
+  assert.match(health4h.healthReason, /within 6h target RPO/);
+
+  // Case B: 6.5h elapsed (scheduler delayed past 6h Target RPO) and run failed => DEGRADED (Target RPO Missed within 2h grace)
+  const health65h = calculateBackupHealth({
+    currentAttemptAt: new Date("2026-10-04T18:30:00Z"),
+    lastAttemptStatus: "failed",
+    lastErrorCategory: "offsite_upload",
+    previousSuccessfulBackupAt: "2026-10-04T12:00:00Z",
+    databaseStatus: "success",
+    storageStatus: "success",
+    offsiteStatus: "failed",
+  });
+  assert.equal(health65h.healthState, "DEGRADED");
+  assert.match(health65h.healthReason, /missed 6h target RPO/);
+});
+
+// 20. ephemeral runner with no local health file derives previous success from R2 _VERIFIED.json
+test("20. ephemeral runner with no local health file derives previous success from R2 _VERIFIED.json", async () => {
+  const env = createMockRunEnvironment("20");
+  const mockClient = new MockOffsiteStorageClient();
+
+  // Populate R2 with a verified run containing _VERIFIED.json from 2 hours ago
+  const prevRunId = "2026-10-04T100000Z";
+  const prevMarker = JSON.stringify({
+    runId: prevRunId,
+    status: "verified",
+    verifiedAt: "2026-10-04T10:02:00Z",
+    verifiedBy: "deep-round-trip-check",
+  });
+  const tmp = path.join(os.tmpdir(), `prev-marker-${Date.now()}.json`);
+  fs.writeFileSync(tmp, prevMarker);
+  await mockClient.uploadFile(tmp, `fuel-station/runs/${prevRunId}/_VERIFIED.json`, "application/json");
+  fs.unlinkSync(tmp);
+
+  // Notice: We specify a NON-EXISTENT local health path to simulate clean ephemeral runner
+  const nonExistentHealthPath = path.join(env.tmpDir, "does-not-exist", "health.json");
+
+  // Run a backup that fails at off-site upload
+  mockClient.failNextUpload = true;
+
+  const result = await executeBackupRun({
+    runId: env.runId,
+    baseDir: path.join(env.tmpDir, "runs"),
+    referenceHealthPath: nonExistentHealthPath,
+    now: new Date("2026-10-04T12:00:00Z"), // 2h after previous
+    dbRunner: async () => ({
+      status: "success",
+      targetDir: env.dbDir,
+      dumpFilePath: path.join(env.dbDir, "fuel-station.dump"),
+      sha256: env.dbSha256,
+      sizeBytes: 25,
+      manifestPath: path.join(env.dbDir, "manifest.json"),
+    }),
+    storageRunner: async () => ({
+      status: "success",
+      targetDir: env.storageDir,
+      totalDiscovered: 1,
+      totalDownloaded: 1,
+      totalFailed: 0,
+      manifestPath: path.join(env.storageDir, "manifest.json"),
+      files: [],
+    }),
+    offsiteClient: mockClient,
+  });
+
+  // Since latest failed at offsite upload but remote backup was 2h ago (< 6h), health state should be DEGRADED, NOT FAILED
+  assert.equal(result.overallStatus, "failed");
+  assert.equal(result.offsite.status, "failed");
+  assert.equal(result.health.lastSuccessfulBackupAt, "2026-10-04T10:02:00Z");
+  assert.equal(result.health.healthState, "DEGRADED");
+  assert.match(result.health.healthReason, /within 6h target RPO/);
+
+  fs.rmSync(env.tmpDir, { recursive: true, force: true });
+});
+
+// 21. dead-man monitor signal handles missing URL safely without crashing
+test("21. dead-man monitor signal handles missing URL safely without crashing", async () => {
+  const { sendDeadManSignal } = await import("./heartbeat");
+
+  // Without URL => returns false safely
+  const startResult = await sendDeadManSignal("start", { pingUrl: "" });
+  assert.equal(startResult, false);
+
+  const successResult = await sendDeadManSignal("success", { pingUrl: undefined });
+  assert.equal(successResult, false);
+
+  const failResult = await sendDeadManSignal("fail", { pingUrl: "   " });
+  assert.equal(failResult, false);
+});
+
+// 22. secrets never appear in generated manifest or diagnostic outputs
+test("22. secrets never appear in generated manifest or diagnostic outputs", async () => {
+  const secretDbUrl = "postgresql://postgres:SUPER_SECRET_PW@db.example.com:5432/fuel";
+  const secretJwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+
+  const redacted = redactSecretString(`Connecting to ${secretDbUrl} with token ${secretJwt}`);
+  assert.ok(!redacted.includes("SUPER_SECRET_PW"), "DB password must be redacted");
+  assert.ok(!redacted.includes("SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"), "JWT signature must be redacted");
+  assert.ok(redacted.includes(":***"), "Password should be replaced with :***");
+  assert.ok(redacted.includes("[REDACTED_JWT]"), "JWT should be replaced with [REDACTED_JWT]");
 });

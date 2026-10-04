@@ -1,0 +1,103 @@
+name: Production Scheduled Backup & Verification
+
+# Allowed triggers ONLY: schedule and workflow_dispatch.
+# Explicitly NO push, pull_request, or pull_request_target (production secrets protection).
+on:
+  schedule:
+    # Cadence: Every 4 hours at off-peak minute 17 UTC (00:17, 04:17, 08:17, 12:17, 16:17, 20:17).
+    # Target RPO = 6h. 4h cadence provides ~2h operational margin against scheduling jitter.
+    - cron: "17 0,4,8,12,16,20 * * *"
+  workflow_dispatch:
+
+# Minimum GitHub token permission: read contents only.
+# No repository write permission. No backup artifacts uploaded to GitHub Actions.
+permissions:
+  contents: read
+
+# Concurrency & hang protection: prevent overlapping backup runs.
+# A running backup is never canceled prematurely by an incoming run.
+concurrency:
+  group: production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Execute Production Backup & Offsite Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      # Least-privileged Supabase read credential (proven to download public products bucket)
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      OFFSITE_S3_ENDPOINT: ${{ secrets.OFFSITE_S3_ENDPOINT }}
+      OFFSITE_S3_BUCKET: ${{ secrets.OFFSITE_S3_BUCKET }}
+      OFFSITE_S3_REGION: ${{ secrets.OFFSITE_S3_REGION }}
+      OFFSITE_S3_ACCESS_KEY_ID: ${{ secrets.OFFSITE_S3_ACCESS_KEY_ID }}
+      OFFSITE_S3_SECRET_ACCESS_KEY: ${{ secrets.OFFSITE_S3_SECRET_ACCESS_KEY }}
+      BACKUP_HEALTHCHECK_URL: ${{ secrets.BACKUP_HEALTHCHECK_URL }}
+
+    steps:
+      # Heartbeat lifecycle: notify start before environment setup
+      - name: Send dead-man start signal
+        if: env.BACKUP_HEALTHCHECK_URL != ''
+        run: |
+          echo "[dead-man] Notifying monitor of workflow start..."
+          curl -fsS -m 10 --retry 3 "${{ secrets.BACKUP_HEALTHCHECK_URL }}/start" || true
+
+      # Action Supply Chain Hardening: Pin full 40-character commit SHAs with version comments
+      # Security: persist-credentials: false prevents caching GitHub token in local git config
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: 20
+          cache: npm
+
+      # PostgreSQL 17 client installation (fail-closed if not available)
+      - name: Install PostgreSQL 17 client tools
+        run: |
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+
+          echo "=== Verifying PostgreSQL Client Versions ==="
+          pg_dump --version
+          pg_restore --version
+
+          if ! pg_dump --version | grep -q "17\."; then
+            echo "ERROR: pg_dump version 17.x is required for production database parity."
+            exit 1
+          fi
+
+      # Strict immutable dependency installation
+      - name: Install dependencies
+        run: npm ci
+
+      # Execute production-proven backup pipeline with deep remote verification and commit marker
+      - name: Run unified backup and deep offsite verification
+        run: npm run backup:run -- --verify-remote
+
+      # Heartbeat lifecycle: Send success signal after complete verification and commit marker upload
+      # Operational requirement: If heartbeat fails to send, fail the workflow operationally because monitoring chain is broken
+      - name: Send dead-man success signal
+        if: success() && env.BACKUP_HEALTHCHECK_URL != ''
+        run: |
+          echo "[dead-man] Backup and deep remote verification succeeded. Sending success signal..."
+          curl -fsS -m 10 --retry 3 "${{ secrets.BACKUP_HEALTHCHECK_URL }}"
+
+      # Heartbeat lifecycle: Trap failure signal if any step fails (best-effort alert)
+      - name: Send dead-man failure signal
+        if: failure() && env.BACKUP_HEALTHCHECK_URL != ''
+        continue-on-error: true
+        run: |
+          echo "[dead-man] Runner failure detected. Sending fail signal..."
+          curl -fsS -m 10 --retry 3 "${{ secrets.BACKUP_HEALTHCHECK_URL }}/fail" || true

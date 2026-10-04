@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { Readable } from "stream";
 import {
   S3Client,
@@ -364,6 +365,79 @@ export function evaluateRetentionCandidates(
   return { candidatesToDelete, protectedRuns, reasons };
 }
 
+export interface RemoteRunInfo {
+  runId: string;
+  createdAt: string;
+  verifiedAt?: string;
+  completedAt?: string;
+  status: "verified" | "success" | "failed";
+}
+
+/**
+ * Discovers the latest verified successful backup run directly from remote offsite storage.
+ * Designed for ephemeral runners (e.g. GitHub Actions) that do not retain local state.
+ *
+ * Invariant (Sprint 4C.2 Commit Marker Pattern):
+ * Only runs that contain the final commit marker "_VERIFIED.json" (written ONLY after
+ * deep remote round-trip verification passes) are accepted as verified.
+ * Any run without "_VERIFIED.json" is treated as incomplete/unverified/failed!
+ */
+export async function discoverLatestVerifiedRemoteBackup(
+  client: OffsiteStorageClient,
+  runsPrefix: string = "fuel-station/runs/"
+): Promise<RemoteRunInfo | null> {
+  const objects = await client.listObjects(runsPrefix);
+  const verifiedMarkerSuffix = "/_VERIFIED.json";
+
+  const verifiedKeys = objects
+    .map((o) => o.key)
+    .filter((k) => k.startsWith(runsPrefix) && k.endsWith(verifiedMarkerSuffix));
+
+  if (verifiedKeys.length === 0) {
+    return null;
+  }
+
+  const candidates: { runId: string; markerKey: string; timestamp: Date }[] = [];
+  for (const k of verifiedKeys) {
+    const parts = k.slice(runsPrefix.length).split("/");
+    const runId = parts[0];
+    const ts = parseBackupTimestampFromRunId(runId);
+    if (ts) {
+      candidates.push({ runId, markerKey: k, timestamp: ts });
+    }
+  }
+
+  candidates.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  for (const c of candidates) {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "r2-verify-marker-"));
+    const tempFile = path.join(tempDir, "_VERIFIED.json");
+    try {
+      await client.downloadFile(c.markerKey, tempFile);
+      const marker = JSON.parse(fs.readFileSync(tempFile, "utf8"));
+      if (marker.status === "verified" || marker.verifiedAt) {
+        return {
+          runId: c.runId,
+          createdAt: marker.createdAt || c.timestamp.toISOString(),
+          verifiedAt: marker.verifiedAt || c.timestamp.toISOString(),
+          completedAt: marker.verifiedAt || marker.completedAt || c.timestamp.toISOString(),
+          status: "verified",
+        };
+      }
+    } catch {
+      // Continue to next candidate
+    } finally {
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return null;
+}
+
 export type HealthStatusType = "HEALTHY" | "DEGRADED" | "FAILED";
 
 export interface BackupHealthState {
@@ -391,12 +465,15 @@ export interface BackupHealthState {
 /**
  * Calculates machine-readable backup health state.
  *
- * Rules:
- * - targetWindowHours = 6h
- * - graceWindowHours = 2h (total window = 8h)
- * - HEALTHY: lastStatus == "success" AND age <= targetWindowHours + graceWindowHours
- * - DEGRADED: latest successful backup exists but is older than 8h
- * - FAILED: latest run failed AND no active successful backup exists within healthy window
+ * Rules (Sprint 4C.2):
+ * - Backup cadence = 4h
+ * - Target RPO = 6h (Operational margin = ~2h)
+ * - HEALTHY: lastStatus == "success" AND age <= targetWindowHours (<= 6h)
+ * - DEGRADED:
+ *     - Local verification PASS but off-site skipped (diagnostic mode)
+ *     - OR: Succeeded but elapsed time > 6h (Target RPO missed)
+ *     - OR: Latest attempt failed, but previous successful backup is still within grace window
+ * - FAILED: Latest run failed AND latest successful backup is missing or expired (> 8h alert threshold)
  * - Invariant: A failed run does NOT erase lastSuccessfulBackupAt!
  */
 export function calculateBackupHealth(params: {
@@ -451,19 +528,18 @@ export function calculateBackupHealth(params: {
       if (ageMs <= targetWindowMs) {
         healthState = "HEALTHY";
         healthReason = `Latest successful backup is fresh (${ageHours.toFixed(1)}h ago <= ${targetWindowHours}h target RPO)`;
-      } else if (ageMs <= maxAllowedAgeMs) {
-        healthState = "DEGRADED";
-        healthReason = `Backup succeeded but elapsed time (${ageHours.toFixed(1)}h ago) missed ${targetWindowHours}h target RPO (within ${graceWindowHours}h operational grace)`;
       } else {
         healthState = "DEGRADED";
-        healthReason = `Backup succeeded but elapsed time (${ageHours.toFixed(1)}h ago) exceeds ${targetWindowHours + graceWindowHours}h alert threshold`;
+        healthReason = `Backup succeeded but elapsed time (${ageHours.toFixed(1)}h ago) missed ${targetWindowHours}h target RPO`;
       }
     } else {
       // Last attempt failed
-      if (ageMs <= maxAllowedAgeMs) {
-        // We still have a valid backup within the grace window, but latest attempt failed -> DEGRADED
+      if (ageMs <= targetWindowMs) {
         healthState = "DEGRADED";
-        healthReason = `Latest attempt failed (${params.lastErrorCategory || "error"}), but previous backup (${ageHours.toFixed(1)}h ago) is within ${targetWindowHours + graceWindowHours}h grace window`;
+        healthReason = `Latest attempt failed (${params.lastErrorCategory || "error"}), but previous backup (${ageHours.toFixed(1)}h ago) is within ${targetWindowHours}h target RPO`;
+      } else if (ageMs <= maxAllowedAgeMs) {
+        healthState = "DEGRADED";
+        healthReason = `Latest attempt failed (${params.lastErrorCategory || "error"}), and previous backup (${ageHours.toFixed(1)}h ago) missed ${targetWindowHours}h target RPO (within ${graceWindowHours}h operational grace)`;
       } else {
         healthState = "FAILED";
         healthReason = `Latest run failed and latest successful backup is expired (${ageHours.toFixed(1)}h ago > ${targetWindowHours + graceWindowHours}h alert threshold)`;

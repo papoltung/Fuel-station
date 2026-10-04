@@ -6,6 +6,7 @@ import { runStorageBackup } from "./backup-storage";
 import { S3OffsiteStorageClient, OffsiteStorageClient } from "../lib/offsite-storage";
 import { executeBackupRun, validatePreUpload } from "../lib/backup-orchestrator";
 import { redactSecretString, calculateSha256 } from "../lib/backup-helpers";
+import { sendDeadManSignal } from "../lib/heartbeat";
 
 // Load environment variables (.env.local -> .env)
 dotenv.config({ path: ".env.local" });
@@ -22,6 +23,9 @@ export async function runFullBackupPipeline(cliOptions: BackupRunCliOptions = {}
   console.log("==================================================");
   console.log(" Fuel Station: Unified Backup & Off-site Pipeline ");
   console.log("==================================================");
+
+  // Send external dead-man start signal (Phase 9)
+  await sendDeadManSignal("start");
 
   let offsiteClient: OffsiteStorageClient | undefined = undefined;
 
@@ -163,11 +167,35 @@ export async function runFullBackupPipeline(cliOptions: BackupRunCliOptions = {}
         ).toFixed(2)} MB) with zero checksum errors.`
       );
 
+      // Phase 0 / Sprint 4C.2: Write and upload _VERIFIED.json commit marker as the final transaction commit
+      const verifiedMarkerPath = path.join(testTempDir, "_VERIFIED.json");
+      const verifiedData = {
+        runId: result.runId,
+        verifiedAt: new Date().toISOString(),
+        dbSha256: result.database.sha256,
+        storageObjectsVerified: verifiedStorageFiles,
+        status: "verified",
+        verifiedBy: "deep-round-trip-check",
+      };
+      fs.writeFileSync(verifiedMarkerPath, JSON.stringify(verifiedData, null, 2), "utf8");
+
+      const remoteMarkerKey = `${remotePrefix}/_VERIFIED.json`;
+      console.log(`[restore-readiness] Uploading final commit marker: "${remoteMarkerKey}"...`);
+      await offsiteClient.uploadFile(verifiedMarkerPath, remoteMarkerKey, "application/json");
+
+      const markerVerify = await offsiteClient.verifyObjectExists(remoteMarkerKey);
+      if (!markerVerify.exists) {
+        throw new Error(`Failed to commit run: "${remoteMarkerKey}" was not found after upload.`);
+      }
+      console.log(`[restore-readiness] RUN OFFICIALLY COMMITTED: Verified commit marker exists in offsite storage.`);
+
       // Clean up temporary download verification folder
       fs.rmSync(testTempDir, { recursive: true, force: true });
     } catch (err: unknown) {
-      console.error(`[restore-readiness] FAILED: ${(err as Error).message}`);
+      const errMsg = (err as Error).message;
+      console.error(`[restore-readiness] FAILED: ${errMsg}`);
       fs.rmSync(testTempDir, { recursive: true, force: true });
+      await sendDeadManSignal("fail", `Restore readiness verification failed: ${errMsg}`);
       process.exit(1);
     }
   }
@@ -176,8 +204,12 @@ export async function runFullBackupPipeline(cliOptions: BackupRunCliOptions = {}
 
   if (result.exitCode !== 0) {
     console.error(`[backup-run] Error details: ${result.error || "Unknown error"}`);
+    await sendDeadManSignal("fail", `Backup run ${result.runId} failed: ${result.error || "Unknown error"}`);
     process.exit(result.exitCode);
   }
+
+  // Send success heartbeat only after complete execution and verification
+  await sendDeadManSignal("success", `Run ${result.runId} succeeded (${result.database.status}, ${result.storage.objects} assets, verified offsite)`);
 
   return result;
 }
@@ -187,8 +219,9 @@ if (require.main === module || (typeof process !== "undefined" && process.argv[1
   const skipOffsite = args.includes("--skip-offsite");
   const verifyRemoteDownload = args.includes("--verify-remote");
 
-  runFullBackupPipeline({ skipOffsite, verifyRemoteDownload }).catch((err) => {
+  runFullBackupPipeline({ skipOffsite, verifyRemoteDownload }).catch(async (err) => {
     console.error("[backup-run] Fatal error:", redactSecretString(err.message));
+    await sendDeadManSignal("fail", `Fatal runner crash: ${err.message}`);
     process.exit(1);
   });
 }

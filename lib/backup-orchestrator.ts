@@ -14,6 +14,7 @@ import {
   calculateBackupHealth,
   BackupHealthState,
   parseBackupTimestampFromRunId,
+  discoverLatestVerifiedRemoteBackup,
 } from "./offsite-storage";
 import { BackupDbResult } from "../scripts/backup-db";
 import { BackupStorageResult } from "../scripts/backup-storage";
@@ -364,6 +365,18 @@ export async function executeBackupRun(options: BackupOrchestratorOptions = {}):
       previousSuccessfulBackupAt = prevHealth.lastSuccessfulBackupAt;
     } catch {
       // ignore
+    }
+  }
+
+  // Phase 0 (Ephemeral Runner): If local state does not exist on disk, derive latest success from verified remote R2 backups
+  if (!previousSuccessfulBackupAt && options.offsiteClient) {
+    try {
+      const remoteLatest = await discoverLatestVerifiedRemoteBackup(options.offsiteClient);
+      if (remoteLatest) {
+        previousSuccessfulBackupAt = remoteLatest.completedAt || remoteLatest.createdAt;
+      }
+    } catch {
+      // gracefully ignore remote discovery error
     }
   }
 
