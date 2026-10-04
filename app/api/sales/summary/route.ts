@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { calculateSalesSummary } from "@/lib/sales-summary";
+import { buildSalesSummaryFromAggregates } from "@/lib/sales-summary";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
@@ -11,33 +11,71 @@ export async function GET(req: NextRequest) {
   const previousStart = new Date(start.getTime() - 24 * 60 * 60 * 1000);
   const previousEnd = new Date(end.getTime() - 24 * 60 * 60 * 1000);
 
-  // Only fetch fields used by the response. Historical stock-cost calculations
-  // were removed: their results were computed but never returned or consumed.
-  const [sales, productSales, previousSales, previousProductSales] = await Promise.all([
-    prisma.sale.findMany({
-      where: { date: { gte: start, lte: end } },
+  const [
+    fuelTypes,
+    fuelSalesGroup,
+    productSalesGroup,
+    previousFuel,
+    previousProduct,
+  ] = await Promise.all([
+    prisma.fuelType.findMany({
       select: {
-        totalAmount: true,
-        liters: true,
-        paymentMethod: true,
-        fuelType: { select: { name: true, label: true } },
+        id: true,
+        name: true,
+        label: true,
       },
     }),
-    prisma.productSale.findMany({
+    prisma.sale.groupBy({
+      by: ["fuelTypeId", "paymentMethod"],
       where: { date: { gte: start, lte: end } },
-      select: { totalAmount: true, quantity: true, paymentMethod: true },
+      _sum: {
+        totalAmount: true,
+        liters: true,
+      },
+      _count: {
+        id: true,
+      },
     }),
-    prisma.sale.findMany({
-      where: { date: { gte: previousStart, lte: previousEnd } },
-      select: { totalAmount: true, liters: true },
+    prisma.productSale.groupBy({
+      by: ["paymentMethod"],
+      where: { date: { gte: start, lte: end } },
+      _sum: {
+        totalAmount: true,
+        quantity: true,
+      },
+      _count: {
+        id: true,
+      },
     }),
-    prisma.productSale.findMany({
+    prisma.sale.aggregate({
       where: { date: { gte: previousStart, lte: previousEnd } },
-      select: { totalAmount: true },
+      _sum: {
+        totalAmount: true,
+        liters: true,
+      },
+      _count: {
+        id: true,
+      },
+    }),
+    prisma.productSale.aggregate({
+      where: { date: { gte: previousStart, lte: previousEnd } },
+      _sum: {
+        totalAmount: true,
+      },
+      _count: {
+        id: true,
+      },
     }),
   ]);
 
   return NextResponse.json(
-    calculateSalesSummary(dateStr, sales, productSales, previousSales, previousProductSales),
+    buildSalesSummaryFromAggregates({
+      date: dateStr,
+      fuelTypes,
+      fuelSalesGroup,
+      productSalesGroup,
+      previousFuel,
+      previousProduct,
+    }),
   );
 }
