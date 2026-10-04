@@ -180,8 +180,9 @@ model Product {
 }
 
 model ProductSale {
-  id            Int      @id @default(autoincrement())
-  date          DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  clientRequestId String?  @unique
+  date            DateTime @default(now())
   sellerName    String
   product       Product  @relation(fields: [productId], references: [id])
   productId     Int

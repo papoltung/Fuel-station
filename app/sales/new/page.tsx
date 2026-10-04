@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type FuelType = {
@@ -70,6 +70,7 @@ export default function NewSalePage() {
     paymentMethod: "cash",
     customerName: "",
   });
+  const pendingProductRequestId = useRef<string | null>(null);
 
   useEffect(() => {
     fetch("/api/fuel-types")
@@ -201,6 +202,11 @@ export default function NewSalePage() {
     if (productForm.paymentMethod === "credit" && !productForm.customerName.trim())
       return setError("กรอกชื่อลูกค้าเครดิต");
 
+    if (!pendingProductRequestId.current) {
+      pendingProductRequestId.current = crypto.randomUUID();
+    }
+    const clientRequestId = pendingProductRequestId.current;
+
     setLoading(true);
     localStorage.setItem(SELLER_KEY, productForm.sellerName.trim());
 
@@ -209,6 +215,7 @@ export default function NewSalePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          clientRequestId,
           ...productForm,
           totalAmount: productTotal,
           date: productForm.date + "+07:00",
@@ -217,10 +224,14 @@ export default function NewSalePage() {
 
       const data = await res.json();
       if (!res.ok) {
+        if (res.status >= 400 && res.status < 500) {
+          pendingProductRequestId.current = null;
+        }
         setError(data.error ?? "บันทึกไม่สำเร็จ");
         return;
       }
 
+      pendingProductRequestId.current = null;
       setSuccessData({
         amount: productTotal,
         label: `${selectedProduct?.name ?? ""} ${productForm.quantity} ${
@@ -236,6 +247,7 @@ export default function NewSalePage() {
   }
 
   function resetForNextSale() {
+    pendingProductRequestId.current = null;
     setSuccess(false);
     setError("");
     setFuelForm((f) => ({

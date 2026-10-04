@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/authz";
-import { PRODUCT_SALE_ERROR_CODES } from "@/lib/product-sale";
+import {
+  PRODUCT_SALE_ERROR_CODES,
+  parseProductSaleInput,
+  isSameProductSaleRequest,
+} from "@/lib/product-sale";
 
 export async function GET(req: NextRequest) {
   const auth = await requireRole(["owner", "manager", "staff"]);
@@ -21,44 +26,115 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await requireRole(["owner", "manager", "staff"]);
   if (!auth.ok) return auth.response;
-  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
-  const productId = Number(body?.productId);
-  const quantity = Number(body?.quantity);
-  const unitPrice = Number(body?.unitPrice);
-  const totalAmount = Number(body?.totalAmount);
-  const paymentMethod = String(body?.paymentMethod ?? "");
-  const customerName = typeof body?.customerName === "string" ? body.customerName : null;
-  const note = typeof body?.note === "string" ? body.note : null;
-  const date = typeof body?.date === "string" ? body.date : null;
-  if (!Number.isInteger(productId) || productId <= 0 || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(totalAmount) || totalAmount <= 0 || !paymentMethod) {
-    return NextResponse.json({ error: "ข้อมูลการขายสินค้าไม่ถูกต้อง" }, { status: 400 });
+
+  let input: ReturnType<typeof parseProductSaleInput>;
+  try {
+    const body = await req.json().catch(() => null);
+    input = parseProductSaleInput(body, auth.user.name);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "ข้อมูลการขายสินค้าไม่ถูกต้อง" },
+      { status: 400 }
+    );
+  }
+
+  // Pre-check for existing clientRequestId (fast path for sequential retries)
+  if (input.clientRequestId) {
+    const existing = await prisma.productSale.findUnique({
+      where: { clientRequestId: input.clientRequestId },
+      include: { product: true },
+    });
+    if (existing) {
+      if (isSameProductSaleRequest(existing, input)) {
+        return NextResponse.json(existing, {
+          status: 200,
+          headers: { "Idempotent-Replay": "true" },
+        });
+      }
+      return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
+    }
   }
 
   try {
+    const roundedQty = Math.round(input.quantity);
     const sale = await prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id: productId }, select: { costPrice: true, currentStock: true } });
-      if (!product || product.currentStock < quantity) throw new Error(PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK);
+      const product = await tx.product.findUnique({
+        where: { id: input.productId },
+        select: { costPrice: true },
+      });
+      if (!product) throw new Error("PRODUCT_NOT_FOUND");
+
+      // 1. Create ProductSale first (claims clientRequestId; if concurrent duplicate, hits P2002 before touching stock)
       const created = await tx.productSale.create({
         data: {
-          productId,
-          quantity,
-          unitPrice,
-          totalAmount,
+          clientRequestId: input.clientRequestId,
+          productId: input.productId,
+          quantity: input.quantity,
+          unitPrice: input.unitPrice,
+          totalAmount: input.totalAmount,
           costPriceAtSale: product.costPrice > 0 ? product.costPrice : null,
-          paymentMethod,
-          sellerName: auth.user.name,
-          customerName: customerName?.trim() || null,
-          note: note?.trim() || null,
-          date: date ? new Date(date) : new Date(),
+          paymentMethod: input.paymentMethod,
+          sellerName: input.sellerName,
+          customerName: input.customerName,
+          note: input.note,
+          date: input.date ?? new Date(),
         },
+      });
+
+      // 2. Conditional atomic stock decrement: stock must be >= roundedQty
+      const stockUpdate = await tx.product.updateMany({
+        where: {
+          id: input.productId,
+          currentStock: { gte: roundedQty },
+        },
+        data: {
+          currentStock: { decrement: roundedQty },
+        },
+      });
+
+      if (stockUpdate.count !== 1) {
+        throw new Error(PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK);
+      }
+
+      // 3. Re-read ProductSale with fresh post-decrement product relation
+      const freshSale = await tx.productSale.findUnique({
+        where: { id: created.id },
         include: { product: true },
       });
-      await tx.product.update({ where: { id: productId }, data: { currentStock: { decrement: Math.round(quantity) } } });
-      return created;
+
+      return freshSale!;
     });
+
     return NextResponse.json(sale, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK) return NextResponse.json({ error: "สินค้าไม่พอ", code: PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK }, { status: 409 });
+    if (error instanceof Error && error.message === PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK) {
+      return NextResponse.json(
+        { error: "สินค้าไม่พอ", code: PRODUCT_SALE_ERROR_CODES.INSUFFICIENT_STOCK },
+        { status: 409 }
+      );
+    }
+    if (error instanceof Error && error.message === "PRODUCT_NOT_FOUND") {
+      return NextResponse.json({ error: "ไม่พบสินค้า" }, { status: 404 });
+    }
+    // Concurrency race: P2002 Unique constraint violation on clientRequestId
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      if (input.clientRequestId) {
+        const existing = await prisma.productSale.findUnique({
+          where: { clientRequestId: input.clientRequestId },
+          include: { product: true },
+        });
+        if (existing) {
+          if (isSameProductSaleRequest(existing, input)) {
+            return NextResponse.json(existing, {
+              status: 200,
+              headers: { "Idempotent-Replay": "true" },
+            });
+          }
+          return NextResponse.json({ error: "รหัสรายการนี้ถูกใช้กับข้อมูลอื่นแล้ว" }, { status: 409 });
+        }
+      }
+    }
+
     console.error("product-sales POST error:", error);
     return NextResponse.json({ error: "บันทึกการขายสินค้าไม่สำเร็จ" }, { status: 500 });
   }
