@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
-import { GET as getSalesSummary } from "@/app/api/sales/summary/route";
+import { getSalesSummaryData } from "@/lib/sales-summary-service";
 
 export async function GET(req: NextRequest) {
   const auth = await requireRole(["owner", "manager", "staff"]);
@@ -15,10 +15,9 @@ export async function GET(req: NextRequest) {
   const meterOwnerWhere = auth.user.role === "owner" ? {} : {
     openedById: auth.user.id,
   };
-  const summaryRequest = new NextRequest(new URL(`/api/sales/summary?date=${date}`, req.url));
 
-  const [summaryResponse, stocks, sales, meters, productSales] = await Promise.all([
-    getSalesSummary(summaryRequest),
+  const [summary, stocks, sales, meters, productSales] = await Promise.all([
+    getSalesSummaryData(date),
     auth.user.role === "owner"
       ? prisma.fuelStock.findMany({
           select: {
@@ -69,10 +68,9 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  if (!summaryResponse.ok) return NextResponse.json({ error: "โหลดข้อมูลสรุปไม่สำเร็จ" }, { status: 500 });
   return NextResponse.json({
     account: auth.user,
-    summary: await summaryResponse.json(),
+    summary,
     stocks,
     sales,
     meters,
