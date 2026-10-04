@@ -18,7 +18,23 @@ export type SaleQueueStore = {
   list(): Promise<PendingSale[]>;
   put(item: PendingSale): Promise<void>;
   remove(id: string): Promise<void>;
+  updateIfExists?(id: string, updater: (current: PendingSale) => PendingSale): Promise<boolean>;
 };
+
+export async function updateItemIfExists(
+  store: SaleQueueStore,
+  id: string,
+  updater: (current: PendingSale) => PendingSale,
+): Promise<boolean> {
+  if (store.updateIfExists) {
+    return store.updateIfExists(id, updater);
+  }
+  const items = await store.list();
+  const current = items.find((i) => i.id === id);
+  if (!current) return false;
+  await store.put(updater(current));
+  return true;
+}
 
 export type SendResult = { ok: boolean; status: number; error?: string; errorCode?: string };
 
@@ -28,7 +44,7 @@ export async function retryNeedsReview(store: SaleQueueStore) {
   const items = await store.list();
   for (const item of items) {
     if (item.status === "needs-review") {
-      await store.put({ ...item, status: "queued" });
+      await updateItemIfExists(store, item.id, (current) => ({ ...current, status: "queued" }));
     }
   }
 }
@@ -45,7 +61,7 @@ export async function removeQuickSalePumpAssignments(store: SaleQueueStore) {
     void _pumpId;
     void _expectedPumpId;
     void _pumpNo;
-    await store.put({ ...item, expectedPumpId: undefined, payload });
+    await updateItemIfExists(store, item.id, (current) => ({ ...current, expectedPumpId: undefined, payload }));
   }
 }
 
@@ -76,7 +92,11 @@ export function createSaleQueueSynchronizer(
     });
     // Keep the chain usable after a truly unexpected failure.
     tail = run.catch(async () => {
-      return queueResult(store);
+      try {
+        return await queueResult(store);
+      } catch {
+        return { synced: 0, queued: 0, needsReview: 0 };
+      }
     });
     return run;
   };
@@ -91,30 +111,32 @@ export async function syncPendingSales(
   let synced = 0;
   for (const item of items) {
     if (currentAuthUserId && item.createdByAuthUserId !== currentAuthUserId) {
-      await store.put({ ...item, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" });
+      await updateItemIfExists(store, item.id, (current) => ({ ...current, status: "needs-review", lastError: "รายการนี้ไม่ตรงกับบัญชีที่ล็อกอินอยู่" }));
       continue;
     }
-    await store.put({ ...item, status: "sending" });
+    const claimed = await updateItemIfExists(store, item.id, (current) => ({ ...current, status: "sending" }));
+    if (!claimed) continue; // Item already removed by another tab/session
+
     try {
       const result = await send(item);
       if (result.ok) {
         await store.remove(item.id);
         synced += 1;
       } else {
-        await store.put({
-          ...item,
-          attempts: item.attempts + 1,
+        await updateItemIfExists(store, item.id, (current) => ({
+          ...current,
+          attempts: current.attempts + 1,
           status: result.status >= 400 && result.status < 500 ? "needs-review" : "queued",
           lastError: result.error ?? `HTTP ${result.status}`,
-        });
+        }));
       }
     } catch (error) {
-      await store.put({
-        ...item,
-        attempts: item.attempts + 1,
+      await updateItemIfExists(store, item.id, (current) => ({
+        ...current,
+        attempts: current.attempts + 1,
         status: "queued",
         lastError: error instanceof Error ? error.message : "network error",
-      });
+      }));
     }
   }
   const remaining = await store.list();
@@ -184,6 +206,26 @@ export const browserSaleQueue: SaleQueueStore = {
       const transaction = db.transaction(STORE_NAME, "readwrite");
       transaction.objectStore(STORE_NAME).delete(id);
       await transactionDone(transaction);
+    } finally {
+      db.close();
+    }
+  },
+  async updateIfExists(id, updater) {
+    const db = await openQueue();
+    try {
+      const transaction = db.transaction(STORE_NAME, "readwrite");
+      const objectStore = transaction.objectStore(STORE_NAME);
+      const getReq = objectStore.get(id);
+      let updated = false;
+      getReq.onsuccess = () => {
+        const current = getReq.result as PendingSale | undefined;
+        if (current) {
+          objectStore.put(updater(current));
+          updated = true;
+        }
+      };
+      await transactionDone(transaction);
+      return updated;
     } finally {
       db.close();
     }
