@@ -210,6 +210,14 @@ export default function MeterPage() {
 
       if (!res.ok) {
         alert(data.error ?? "บันทึกไม่สำเร็จ");
+        if (data.code === "METER_ALREADY_CLOSED") {
+          setCloseEnd((c) => {
+            const n = { ...c };
+            delete n[id];
+            return n;
+          });
+          load();
+        }
       } else {
         setCloseEnd((c) => {
           const n = { ...c };

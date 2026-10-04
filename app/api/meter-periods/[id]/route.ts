@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/authz";
 import { canCloseMeter, METER_ERROR_CODES } from "@/lib/meter-context";
@@ -35,7 +36,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const liters = end - existing.meterStart;
     const updated = await prisma.meterPeriod.update({
-      where: { id },
+      where: {
+        id,
+        meterEnd: null,
+      },
       data: {
         meterEnd: end,
         liters,
@@ -52,6 +56,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     });
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      const check = await prisma.meterPeriod.findUnique({ where: { id } });
+      if (!check) {
+        return NextResponse.json({ error: "ไม่พบรายการมิเตอร์", code: "NOT_FOUND" }, { status: 404 });
+      }
+      return NextResponse.json(
+        { error: "รอบมิเตอร์นี้ปิดไปแล้ว กรุณาโหลดหน้าใหม่", code: "METER_ALREADY_CLOSED" },
+        { status: 409 }
+      );
+    }
     console.error("meter-periods PATCH error:", error);
     return NextResponse.json({ error: "ปิดมิเตอร์ไม่สำเร็จ" }, { status: 500 });
   }
