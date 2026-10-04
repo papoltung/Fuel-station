@@ -36,7 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       prisma.saleOrder.update({ where: { id }, data: { status: "done" } }),
       prisma.fuelStock.updateMany({
         where: { fuelTypeId: order.fuelTypeId },
-        data: { currentLiters: { decrement: liters } },
+        data: { currentLiters: { decrement: liters }, version: { increment: 1 } },
       }),
     ]);
 

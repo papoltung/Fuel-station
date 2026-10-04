@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
       });
       await tx.fuelStock.upsert({
         where: { fuelTypeId: ftId },
-        create: { fuelTypeId: ftId, currentLiters: ltr },
-        update: { currentLiters: { increment: ltr } },
+        create: { fuelTypeId: ftId, currentLiters: ltr, version: 1 },
+        update: { currentLiters: { increment: ltr }, version: { increment: 1 } },
       });
       return p;
     });

@@ -49,7 +49,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
       await tx.fuelStock.update({
         where: { fuelTypeId: purchase.fuelTypeId },
-        data: { currentLiters: { decrement: purchase.liters } },
+        data: { currentLiters: { decrement: purchase.liters }, version: { increment: 1 } },
       });
     });
 

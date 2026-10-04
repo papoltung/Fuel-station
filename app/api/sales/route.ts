@@ -86,8 +86,8 @@ export async function POST(req: NextRequest) {
       });
       await tx.fuelStock.upsert({
         where: { fuelTypeId: input.fuelTypeId },
-        create: { fuelTypeId: input.fuelTypeId, currentLiters: -input.liters },
-        update: { currentLiters: { decrement: input.liters } },
+        create: { fuelTypeId: input.fuelTypeId, currentLiters: -input.liters, version: 1 },
+        update: { currentLiters: { decrement: input.liters }, version: { increment: 1 } },
       });
       await tx.saleAudit.create({ data: { saleId: created.id, action: "create", actorId: auth.user.id, actorName: auth.user.name, actorEmail: auth.user.email, afterData: saleSnapshot(created) } });
       return created;

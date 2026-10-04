@@ -160,6 +160,7 @@ model FuelStock {
   fuelType     FuelType @relation(fields: [fuelTypeId], references: [id])
   fuelTypeId   Int      @unique
   currentLiters Float   @default(0)
+  version      Int      @default(0)
   updatedAt    DateTime @updatedAt
 }
 

@@ -25,8 +25,8 @@ export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const existing = await tx.sale.findUnique({ where: { id } }); if (!existing) throw new Error("NOT_FOUND");
-      await tx.fuelStock.upsert({ where: { fuelTypeId: existing.fuelTypeId }, create: { fuelTypeId: existing.fuelTypeId, currentLiters: existing.liters }, update: { currentLiters: { increment: existing.liters } } });
-      await tx.fuelStock.upsert({ where: { fuelTypeId }, create: { fuelTypeId, currentLiters: -liters }, update: { currentLiters: { decrement: liters } } });
+      await tx.fuelStock.upsert({ where: { fuelTypeId: existing.fuelTypeId }, create: { fuelTypeId: existing.fuelTypeId, currentLiters: existing.liters, version: 1 }, update: { currentLiters: { increment: existing.liters }, version: { increment: 1 } } });
+      await tx.fuelStock.upsert({ where: { fuelTypeId }, create: { fuelTypeId, currentLiters: -liters, version: 1 }, update: { currentLiters: { decrement: liters }, version: { increment: 1 } } });
       const sale = await tx.sale.update({ where: { id }, data: { fuelTypeId, totalAmount, pricePerLiter, liters, paymentMethod, pumpNo, customerName: typeof body?.customerName === "string" && body.customerName.trim() ? body.customerName.trim().slice(0, 200) : null, note: typeof body?.note === "string" && body.note.trim() ? body.note.trim().slice(0, 500) : null } });
       await tx.saleAudit.create({ data: { saleId: id, action: "update", actorId: auth.user.id, actorName: auth.user.name, actorEmail: auth.user.email, beforeData: saleSnapshot(existing), afterData: saleSnapshot(sale), reason } }); return sale;
     });
@@ -45,7 +45,7 @@ export async function DELETE(request: NextRequest, { params }: Context) {
       const sale = await tx.sale.findUnique({ where: { id } }); if (!sale) throw new Error("NOT_FOUND");
       await tx.saleAudit.create({ data: { saleId: id, action: "cancel", actorId: auth.user.id, actorName: auth.user.name, actorEmail: auth.user.email, beforeData: saleSnapshot(sale), reason } });
       await tx.sale.delete({ where: { id } });
-      await tx.fuelStock.upsert({ where: { fuelTypeId: sale.fuelTypeId }, create: { fuelTypeId: sale.fuelTypeId, currentLiters: sale.liters }, update: { currentLiters: { increment: sale.liters } } });
+      await tx.fuelStock.upsert({ where: { fuelTypeId: sale.fuelTypeId }, create: { fuelTypeId: sale.fuelTypeId, currentLiters: sale.liters, version: 1 }, update: { currentLiters: { increment: sale.liters }, version: { increment: 1 } } });
     }); return NextResponse.json({ ok: true });
   } catch (error) { const missing = error instanceof Error && error.message === "NOT_FOUND"; return NextResponse.json({ error: missing ? "ไม่พบรายการขาย" : "ยกเลิกรายการไม่สำเร็จ" }, { status: missing ? 404 : 500 }); }
 }

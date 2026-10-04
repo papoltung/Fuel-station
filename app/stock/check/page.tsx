@@ -12,6 +12,7 @@ type FuelType = {
 type StockItem = {
   fuelTypeId: number;
   currentLiters: number;
+  version: number;
   fuelType: FuelType;
 };
 
@@ -59,6 +60,8 @@ export default function StockCheckPage() {
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null);
+  const [staleMeasurements, setStaleMeasurements] = useState<Record<number, number>>({});
   const [results, setResults] = useState<CheckResult[]>([]);
   const [submitted, setSubmitted] = useState(false);
 
@@ -67,10 +70,22 @@ export default function StockCheckPage() {
   const [actuals, setActuals] = useState<Record<number, string>>({});
   const [notes, setNotes] = useState<Record<number, string>>({});
 
+  async function reloadStocks() {
+    try {
+      const res = await fetch("/api/fuel-stock", { cache: "no-store" });
+      if (res.ok) {
+        const stks = await res.json();
+        setStocks(stks ?? []);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     Promise.all([
       fetch("/api/fuel-types").then((r) => r.json()),
-      fetch("/api/fuel-stock").then((r) => r.json()),
+      fetch("/api/fuel-stock", { cache: "no-store" }).then((r) => r.json()),
     ])
       .then(([fts, stks]: [FuelType[], StockItem[]]) => {
         setFuelTypes(fts ?? []);
@@ -94,6 +109,7 @@ export default function StockCheckPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setConflictNotice(null);
 
     const entries = fuelTypes.filter(
       (ft) => actuals[ft.id] !== undefined && actuals[ft.id] !== ""
@@ -109,12 +125,14 @@ export default function StockCheckPage() {
     try {
       const res = await Promise.all(
         entries.map(async (ft) => {
+          const stock = stocks.find((s) => s.fuelTypeId === ft.id);
           const response = await fetch("/api/stock-checks", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               fuelTypeId: ft.id,
               actualLiters: Number(actuals[ft.id]),
+              expectedVersion: stock?.version ?? 0,
               note: notes[ft.id] || null,
               date,
             }),
@@ -123,7 +141,10 @@ export default function StockCheckPage() {
           const data = await response.json();
 
           if (!response.ok) {
-            throw new Error(data.error ?? "บันทึกไม่สำเร็จ");
+            const err = new Error(data.error ?? "บันทึกไม่สำเร็จ");
+            (err as any).code = data.code;
+            (err as any).status = response.status;
+            throw err;
           }
 
           return data;
@@ -140,8 +161,23 @@ export default function StockCheckPage() {
       );
 
       setSubmitted(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+      setStaleMeasurements({});
+    } catch (e: any) {
+      if (e?.code === "STOCK_CHANGED_DURING_CHECK") {
+        await reloadStocks();
+        const staleValues: Record<number, number> = {};
+        for (const ft of entries) {
+          staleValues[ft.id] = Number(actuals[ft.id]);
+        }
+        setStaleMeasurements(staleValues);
+        // Clear actuals so user cannot submit stale measurement with new baseline
+        setActuals({});
+        setConflictNotice(
+          "สต็อกน้ำมันในระบบมีการเปลี่ยนแปลงระหว่างการวัดถัง (มีรายการขายหรือรับน้ำมันแทรกเข้ามาก่อนหน้า) ระบบได้รีเฟรชฐานสต็อกล่าสุดแล้ว ค่าวัดเดิมถือเป็นโมฆะ กรุณาตรวจวัดหรือกรอกค่าวัดถังจริงใหม่อีกครั้ง"
+        );
+      } else {
+        setError(e instanceof Error ? e.message : "เกิดข้อผิดพลาด");
+      }
     } finally {
       setLoading(false);
     }
@@ -463,6 +499,12 @@ export default function StockCheckPage() {
                       L
                     </span>
                   </div>
+
+                  {staleMeasurements[ft.id] !== undefined && !hasValue && (
+                    <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+                      ค่าวัดเดิม: {fmt(staleMeasurements[ft.id])} L (ถูกยกเลิกเนื่องจากสต็อกเปลี่ยน — กรุณาวัด/กรอกใหม่)
+                    </div>
+                  )}
                 </div>
 
                 {hasValue && (
@@ -523,6 +565,22 @@ export default function StockCheckPage() {
               </article>
             );
           })}
+
+          {conflictNotice && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">⚠️</span>
+                <div>
+                  <h3 className="text-sm font-bold text-amber-900">
+                    ตรวจพบการเปลี่ยนแปลงสต็อกระหว่างวัดถัง
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                    {conflictNotice}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
