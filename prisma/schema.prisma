@@ -107,6 +107,7 @@ model Sale {
   shiftId       Int?
   pump          Pump?    @relation(fields: [pumpId], references: [id])
   pumpId        Int?
+  version       Int      @default(0)
   createdAt     DateTime @default(now())
 
   @@index([shiftId, pumpId])
